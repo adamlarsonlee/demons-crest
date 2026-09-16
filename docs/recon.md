@@ -13,7 +13,7 @@ watched live and written to before being committed to assembly.
 
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
-| 1 | Progress-state region | open | Items/powers at `$1E30`-`$1E55`; boss-defeated and stage-open flags not yet located |
+| 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
 | 2 | `current_level` | open | Warp destination |
 | 3 | Level-load entry | open | Triggers the warp |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
@@ -176,12 +176,18 @@ be treated as a hardcoded save.
 **Hypothesis:** boss-defeated and overworld-stage-open flags also live in or
 adjacent to `$1E30`-`$1E55`, making Demon's Crest amenable to the same design.
 
-**Falsifying check:** beat a boss and watch the whole of WRAM for changes, not
-just that region. If flags turn out to be scattered across distant addresses,
-the hypothesis is dead and state blocks become a sparse address/value list
-rather than a contiguous `memcpy` — materially more code and more risk.
+**CONFIRMED.** Rather than beating a boss, six passwords representing different
+progression points were loaded and WRAM diffed in a matched context — all of
+them land on the overworld, so location state cancels out. Progress resolves to
+a contiguous 8-byte block at `$7E:1E50`-`$1E57`: max HP plus 56 flag bits, of
+which `$1E56` and `$1E57` were previously unmapped. Max HP rises monotonically
+across the six states.
 
-Run this check before anything else; it determines the shape of the feature work.
+State blocks are therefore viable exactly as in RockmanXPractice. The remaining
+uncertainty is `$1E44`, which differs between two saves whose `$1E50`-`$1E57`
+are byte-identical, so it depends on something later in the block — plausibly a
+checksum. That needs settling before writing state blocks, because a wrong
+checksum may make the game reject or corrupt a loaded state.
 
 ## ROM identity
 

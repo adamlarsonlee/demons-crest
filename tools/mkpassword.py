@@ -18,6 +18,8 @@ def main():
     ap.add_argument("--spacing", type=int, default=6,
                     help="frames between presses; too low and inputs are dropped")
     ap.add_argument("--start", type=int, default=10, help="first input frame")
+    ap.add_argument("--submit", action="store_true",
+                    help="append cursor-to-END and confirm")
     args = ap.parse_args()
 
     pw = args.password.upper().replace(" ", "")
@@ -46,6 +48,11 @@ def main():
         if row < 3:
             tap("down")
             tap("left", 3)
+
+    if args.submit:
+        tap("down")          # from the bottom row the cursor lands on END
+        frame += 20          # let the cursor settle before confirming
+        tap("a")
 
     print(",".join(presses))
     print(f"# {len(presses)//2} presses, last input frame {frame - args.spacing}",

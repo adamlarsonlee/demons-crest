@@ -16,7 +16,7 @@ JP-only; the English ROM has different mappings.
 | `watch/` | RAM watch files, per boss |
 | `tools/` | ROM identification, patch generation, headless capture, password entry |
 | `states/` | Save states (gitignored, regenerate with `headless.py --save-state`) |
-| `docs/` | recon plan and design notes |
+| `docs/` | recon plan, design notes, passwords |
 
 ## Building
 
@@ -55,8 +55,9 @@ make docker-shell   # then: python3 tools/headless.py --help
 ## Status
 
 Phase 0 (build pipeline) works end to end, on the host and in a container.
-Phase 1 recon is not started — see `docs/recon.md`. No practice features are
-implemented yet.
+Phase 1 recon is under way — see `docs/recon.md`. Code injection is proven and
+the progress-state block is identified at `$7E:1E50`-`$1E57`. No practice
+features are implemented yet.
 
 Two constraints established from the ROM itself: there is **no SRAM**, so
 config persistence needs a header change, and the ROM has **no contiguous free
