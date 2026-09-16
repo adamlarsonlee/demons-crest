@@ -14,8 +14,8 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | open | Warp destination |
-| 3 | Level-load entry | open | Triggers the warp |
+| 2 | `current_level` | open, lead | `$7E:0088`/`$0089` hold coherent per-level values; not confirmed as the source |
+| 3 | Level-load entry | open | Needs execution tracing; static search failed |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
@@ -196,6 +196,51 @@ So a state block does not need to supply it. It is not a per-frame value either
 (stable across 60 frames on the overworld), and it still depends on something
 beyond `$1E50`-`$1E57`, since two saves with identical blocks hold different
 values. Its exact meaning remains unidentified, but nothing depends on that now.
+
+## current_level: lead and dead ends
+
+`$7E:0088` and `$0089` always hold the same value and take a coherent value per
+level across five level entries:
+
+| Entry | `$0088`/`$0089` | Screen |
+|-------|-----------------|--------|
+| stage I from allitems | `06` | castle interior |
+| fly up, then enter | `06` | same as stage I |
+| fly left 150 / 400, then enter | `12` | matching pair |
+| fly right 150, then enter | `10` | forest/swamp |
+
+Corroborating: the two entries reading `06` produce nearly identical screens,
+and forcing `$0088` every frame across the load **hangs** the game on a black
+screen, so the address is genuinely used by the load path.
+
+It is **not confirmed** as `current_level`. A single poke at frames 12, 20, 30,
+50, 80 or 120 after pressing Y changes nothing at all, so either the game writes
+the value after those points (making these bytes a copy rather than the source)
+or it reads the real source earlier.
+
+Dead ends, recorded so they are not repeated:
+
+- Poking any of 22 filtered candidates on the overworld *before* entering has no
+  effect. The destination is determined by Firebrand's position, and the level
+  id is written during the load.
+- Searching the ROM for instructions referencing abyssonym's level pointer
+  tables finds nothing usable. His addresses are file offsets, not SNES
+  addresses (his `7C800` cannot be a SNES address in a 2MB LoROM), so they map
+  to bank `$81`; even searching there, the only matches are coincidental byte
+  patterns. The tables are presumably reached through runtime-computed indices
+  or pointer indirection.
+- The world map is unusable as a progress observable because Firebrand's
+  position on it dominates any pixel diff.
+
+## This is where a debugging emulator becomes necessary
+
+Targets 2, 3, 4 and 6 all need to answer "what code touches this address", which
+means write-breakpoints and single-stepping. The headless harness cannot do that
+— it can observe state and force values, but it cannot watch execution.
+
+A write-breakpoint on `$7E:0088` would resolve target 2 immediately by showing
+what writes it and what that code reads first. This is no longer a convenience;
+it is the blocker for the remaining recon.
 
 ### Screen observables
 
