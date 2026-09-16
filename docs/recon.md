@@ -14,8 +14,8 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | **found** | `$7E:008D` selects the area; forcing it loads a different level |
-| 3 | Level-load entry | **found** | `LDY $8D` / `JSR $80:C5B2` at three sites; `$85:B0C2` writes `$8D` |
+| 2 | `current_level` | open | `$7E:008D` is a screen/mode type, not the area. See the retraction below |
+| 3 | Level-load entry | partial | Per-mode setups and loops found; the area-specific load path is not |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
@@ -322,23 +322,80 @@ $80:C5DF  STA $10
 $80:C5E2  JSR $C5F8        ; follow the pointer and read the data
 ```
 
-So the area index lives in **`$7E:008D`**, read into Y by all three callers, and
-drives the table lookups at `$81:A25A` and `$81:A6A1`. `$85:B0C2` writes `$8D`.
+### Retraction: `$8D` is a mode, not the area
 
-Confirmed by forcing it: holding `$7E:008D` at `00`, `04` or `06` across the
-load produces three different areas that render, rather than a hang. The
-tilesets come out scrambled, because forcing the value mid-load means some data
-loads under the old index and some under the new — a real hook that sets the
-value *before* the load begins would not have that problem. A single poke has no
-effect at all, since the game rewrites `$8D` from `$85:B0C2` afterwards.
+`$7E:008D` was briefly recorded as the area index. It is not. Sampling it
+*during* a load rather than after shows it is `$BC` on the overworld and `02`
+in a level — **the same for two visibly different destinations**. It selects a
+screen or mode type. Forcing it to `00`/`04`/`06` loads a different kind of
+screen, which is why it looked like a level selector.
 
-For a warp, the hook therefore belongs at `$85:B0C2` or at one of the three
-`LDY $8D` sites, which matches how RockmanXPractice implements stage choice.
+`$80:C5B2` is likewise not the area-specific load path. Watching its table
+reads across two matched loads, one into the castle and one into the forest,
+produces **byte-identical access patterns** (`$81:A355` then `$81:A342`-`$A344`,
+`Y=2` in both). It is a shared data-load helper called during screen setup.
 
-Still open: whether `$8D` is a flat level-section index or a level that pairs
-with a separate section value. `$8D` read `02` in every in-level dump sampled,
-including visibly different areas, which argues that something else also
-participates. That is the next thing to pin down.
+The area index is still unfound. A diff of every bank-`$81` read across the two
+matched loads showed only two differing program counters, `$85:98EE` and
+`$85:98F3`, and those turn out to be a sine table: they read the same table at
+`$81:C371` with `X` and with `Y = $5A - X`, which is the classic 90-degree
+sin/cos pair. `X` there is a transition-effect angle, not an area.
+
+So area selection is either driven by data outside bank `$81` or reached
+through a pointer computed in RAM.
+
+### Per-mode loops, and the shared frame-sync routine
+
+The three callers of `$80:C5B2` are three mode setups, each followed by its own
+loop. The overworld one is:
+
+```
+$80:AFDC  JSR $B0A3
+$80:AFDF  JSL $828600
+$80:AFE3  JSR $AFFF
+$80:AFE6  STZ $008A
+$80:AFE9  JSL $85AE26
+$80:AFED  JSR $F66B
+$80:AFF0  INC $0073      ; $7E:0073 is a frame counter
+$80:AFF3  JSL $849C04
+$80:AFF7  LDA $E7
+$80:AFF9  JSL $80821E    ; shared frame sync
+$80:AFFD  BRA $80:AFDC
+```
+
+Hooking `$80:AFF0` proves the mechanism works but only counts 79 frames and
+then stops, because this loop belongs to the overworld alone.
+
+`$80:821E` is called once per iteration by *every* mode, so it is the portable
+per-frame site. It must be hooked **after** its register-save prologue — at
+`$80:822D`, displacing `LDY $0072` and `LDA #$01` — because moving
+`PHB`/`PHD`/`PHP` into a subroutine would leave those pushes stacked on top of
+the `JSL` return address and break the `RTL`. Hooking there counts continuously
+across the overworld, the transition and gameplay.
+
+Caveat: it fires roughly **twice per frame** during gameplay (+400 counts over
+200 frames), so anything needing exactly one call per frame has to guard for
+that.
+
+### Moving out of NMI does not fix the frame shift
+
+The reason for wanting a non-NMI hook was the one-frame shift the NMI hook
+causes at load transitions. Measured against stock in a *moving* scene, with
+frames swept either side to distinguish a shift from corruption:
+
+| Hook | Frames matching stock 650 exactly | Offset |
+|------|-----------------------------------|--------|
+| NMI | 649, 650 | none in this scenario |
+| Frame sync at `$80:822D` | 648, 649 | **-1** |
+
+The frame-sync hook shifts timing *more* than the NMI hook, not less, probably
+because it runs twice per frame inside the loop. A static scene cannot measure
+this at all — several consecutive frames are identical, so everything appears
+to match.
+
+So "hook outside NMI to avoid the shift" is **not supported**. Both sites
+perturb pacing, and choosing between them needs a purpose-built repeatable
+measurement rather than the ad-hoc scenarios used so far.
 
 ### Screen observables
 
