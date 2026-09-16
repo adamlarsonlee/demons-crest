@@ -128,15 +128,25 @@ known destinations**: only two areas are reachable dependably here
 castle), and overworld navigation does not work as a way to reach a third —
 flying right for 250/350/450/550 frames and pressing Y all enter the same place.
 
-The single most useful thing to bring back from a desktop emulator is **save
-states parked in several named areas** — Town, the Colosseum, a specific forest
-section. With four or five known areas the layout index can be read straight off
-a table instead of inferred from two data points. Drop them in `states/` (it is
-gitignored) and say which area each one is.
+The single most useful thing to bring back is a **raw WRAM dump per named
+area** — Town, the Colosseum, a specific forest section. With four or five known
+areas the layout index can be read off a table instead of inferred from two data
+points. Drop them in `states/` (gitignored) and record which area each one is.
 
-A write-breakpoint on the layout selector would also finish target 2 outright,
-but the save states are worth more, because they make every future experiment
-here cheaper.
+Dumps, not save states. A dump is just bytes, so it works from any emulator; in
+Mesen it is Debug -> Memory Tools -> Work RAM -> export. Save states are
+core- and version-specific: this harness pins the snes9x libretro core at commit
+`890b5d4`, so a Mesen state will not load and even another snes9x build probably
+will not. A mismatch fails loudly with `retro_unserialize failed` rather than
+producing garbage. VRAM dumps are worth taking too — matching VRAM against the
+ROM is what located the area-specific tilesets.
+
+Either must be made against the unmodified JP ROM,
+`sha1 a6dc126a1da593d900b33eb74cf33403075e9525` (headerless).
+
+A write-breakpoint on whatever writes a small area-like value during a level
+load would finish target 2 outright, but the dumps are the safer bet: they only
+require visiting places, not finding anything.
 
 ## Documentation
 
