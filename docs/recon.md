@@ -14,8 +14,8 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | open, lead | `$7E:0088`/`$0089` hold coherent per-level values; not confirmed as the source |
-| 3 | Level-load entry | open | Needs execution tracing; static search failed |
+| 2 | `current_level` | **found** | `$7E:008D` selects the area; forcing it loads a different level |
+| 3 | Level-load entry | **found** | `LDY $8D` / `JSR $80:C5B2` at three sites; `$85:B0C2` writes `$8D` |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
@@ -292,8 +292,53 @@ and no instruction references his table addresses. The JP level tables are in
 the same neighbourhood but at different offsets, so his notes are a guide to
 *structure*, not to addresses.
 
-Going further needs a 65816 disassembler to read `$80:C5C0`-`$80:C640`, which is
-the natural next tool.
+`tools/disasm.py` is a stdlib-only 65816 disassembler for LoROM images. Register
+widths change instruction length, so `--m`/`--x` set the initial widths and
+REP/SEP are tracked from there; wrong widths desynchronise the output. It
+annotates operands from `mesen-s/labels.msl`. Validated against the reset stub,
+which it decodes identically to a hand decode.
+
+```sh
+python3 tools/disasm.py rom/DemonsBlazon.sfc --start '$80C5B2' --end '$80C60A' --m 16 --x 16
+```
+
+## The level-load path
+
+```
+$80:A864  LDY $8D          ; area index
+$80:A866  JSR $C5B2        ; also called from $80:AF96 and $80:B7C1
+
+$80:C5B2  REP #$20
+$80:C5C6  LDA $A25A,Y      ; base pointer table, indexed by the area
+$80:C5C9  STA $10
+$80:C5CB  LDA $A6A1,Y      ; second table, same index
+$80:C5CE  STA $14
+$80:C5D0  LDA ($10)        ; fetch a per-area value
+$80:C5D2  AND #$FF
+$80:C5D7  ASL A
+$80:C5D9  ADC $00          ; x3
+$80:C5DC  ADC #$A342       ; 3-byte entries based at $81:A342
+$80:C5DF  STA $10
+$80:C5E2  JSR $C5F8        ; follow the pointer and read the data
+```
+
+So the area index lives in **`$7E:008D`**, read into Y by all three callers, and
+drives the table lookups at `$81:A25A` and `$81:A6A1`. `$85:B0C2` writes `$8D`.
+
+Confirmed by forcing it: holding `$7E:008D` at `00`, `04` or `06` across the
+load produces three different areas that render, rather than a hang. The
+tilesets come out scrambled, because forcing the value mid-load means some data
+loads under the old index and some under the new — a real hook that sets the
+value *before* the load begins would not have that problem. A single poke has no
+effect at all, since the game rewrites `$8D` from `$85:B0C2` afterwards.
+
+For a warp, the hook therefore belongs at `$85:B0C2` or at one of the three
+`LDY $8D` sites, which matches how RockmanXPractice implements stage choice.
+
+Still open: whether `$8D` is a flat level-section index or a level that pairs
+with a separate section value. `$8D` read `02` in every in-level dump sampled,
+including visibly different areas, which argues that something else also
+participates. That is the next thing to pin down.
 
 ### Screen observables
 
