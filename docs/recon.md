@@ -286,7 +286,8 @@ At `$80:C5D2` the read lands on `$81:A355` with `Y=2`, implying a base around
 `$81:A353`. Immediately after, A holds `$A342` while reading `$81:A342`, i.e. a
 pointer was fetched and then followed.
 
-**abyssonym's ROM map appears to be for the US release.** His index-5 example
+**abyssonym's ROM map is for the US release** (confirmed via the randomizer —
+see `docs/areas.md`). His index-5 example
 says the pointer at `a29b` holds `$A3E0`; on the JP ROM that word is `$A53C`,
 and no instruction references his table addresses. The JP level tables are in
 the same neighbourhood but at different offsets, so his notes are a guide to
@@ -383,7 +384,8 @@ $7E:1D82             the stored area index: 02 for tree, 07 for castle
 ```
 
 `$7E:1D82` is stable across frames and matches the table entry exactly in both
-areas, so the index and the table agree independently.
+areas, so the index and the table agree independently. Per the randomizer's area
+table (`docs/areas.md`), index 2 is **S1_2** and index 7 is **S2_3b**.
 
 **Scope, honestly:** forcing A to 7 at `$84:9C60` does store `$1D82 = 07` and
 changes some graphics, but the level still loads as the tree area — only 1927

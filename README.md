@@ -16,7 +16,7 @@ JP-only; the English ROM has different mappings.
 | `watch/` | RAM watch files, per boss |
 | `tools/` | ROM identification, patch generation, headless capture, disassembly |
 | `states/` | Save states (gitignored, regenerate with `headless.py --save-state`) |
-| `docs/` | recon plan, design notes, passwords |
+| `docs/` | recon plan, design notes, passwords, area table |
 
 ## Building
 
