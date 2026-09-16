@@ -11,15 +11,74 @@ watched live and written to before being committed to assembly.
 
 ## Targets
 
-| # | Target | Why it is needed | How to find it |
-|---|--------|------------------|----------------|
-| 1 | Progress-state region | The whole state-block design depends on it | Watch `$1E30`-`$1E60` while defeating a boss and opening a stage |
-| 2 | `current_level` | The warp destination | Breakpoint on level transition, diff WRAM across the load |
-| 3 | Level-load entry | Triggers the warp | Trace execution through a stage entry from the overworld |
-| 4 | `controller_1_new` | Hotkey edge detection | Write-breakpoint on the joypad register mirror ($4218 reads) |
-| 5 | Frame hook | Polls hotkeys once per frame | Locate the NMI vector, confirm cycle headroom |
-| 6 | `rng_value` | Display and reseeding | Watch for a value changing every frame with no input |
-| 7 | Free ROM space | Somewhere to inject code | See "ROM space" below |
+| # | Target | Status | Notes |
+|---|--------|--------|-------|
+| 1 | Progress-state region | open | Items/powers at `$1E30`-`$1E55`; boss-defeated and stage-open flags not yet located |
+| 2 | `current_level` | open | Warp destination |
+| 3 | Level-load entry | open | Triggers the warp |
+| 4 | `controller_1_new` | open | Hotkey edge detection |
+| 5 | Frame hook | **found** | NMI vector `$FFA4` jumps to `$80:8329` (file `0x000329`) |
+| 6 | `rng_value` | open | Display and reseeding |
+| 7 | Free ROM space | **mapped** | See "ROM space"; expansion required |
+
+## Boot path
+
+Decoded statically from the vector table at the end of bank `$80`:
+
+```
+RESET $FF8F   STZ $4200 / STZ $420B / STZ $420C   disable NMI, DMA, HDMA
+              LDA #$8F / STA $2100                forced blank
+              SEI / CLC / XCE                     enter native mode
+              JML $80:8000                        main init
+NMI   $FFA4   JML $80:8329
+IRQ   $FFA8   JML $80:8669
+```
+
+## Headless verification
+
+`tools/headless.py` drives a libretro core (baked into the container image) with
+no GUI, no display server and nothing installed on the host. It dumps frames as
+PNG and exposes memory, which makes most of the remaining recon tractable
+without a debugging emulator:
+
+- video frames -> PNG (256x224)
+- `RETRO_MEMORY_SYSTEM_RAM` -> 128 KB WRAM
+- `RETRO_MEMORY_VIDEO_RAM` -> 64 KB VRAM
+- scripted controller input via `--press frame:button`
+
+`tools/vramsheet.py` renders a VRAM or ROM region as a tile sheet so graphics
+can be identified by eye.
+
+Useful frames, from a cold boot with no input:
+
+| Frame | Screen |
+|-------|--------|
+| 420 | Capcom logo |
+| ~1100-1900 | Opening cinematic |
+| 3400 | Title screen |
+
+Pressing Start during the cinematic skips into gameplay by roughly frame 1400,
+which is how to reach in-game state for WRAM diffing.
+
+## Locating uncompressed graphics
+
+Dump VRAM at a frame of interest, then search the ROM for each 32-byte tile
+verbatim. Sequential runs (VRAM and ROM both advancing by `$20`) indicate an
+uncompressed block that can be edited directly, with no code injection.
+
+Found this way:
+
+| VRAM | ROM | LoROM | Tiles | Contents |
+|------|-----|-------|-------|----------|
+| `$2000` | `0x0F4000` | `$9E:C000` | 36 (12x3) | Capcom logo |
+| `$A000` | `0x0F44A0` | `$9E:C4A0` | 4+ | Loaded at the title screen but **not displayed** |
+
+Palette indices in the logo block: `0` is transparent, and the letters use a
+vertical gradient of `14` (top row) through `13`/`12` (middle) to `11` (bottom).
+
+`tools/mkglyphs.py` generates a patch that overwrites the logo block with text,
+which is how the "PRACTICE" demo on the opening screen is produced. It is a
+data-only change, so it carries no crash risk.
 
 ## The central hypothesis
 

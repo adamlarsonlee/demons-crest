@@ -5,7 +5,7 @@ CONFIG := $(BUILD)/rom_config.inc
 LOCK  := rom.lock
 ASM   := src/asm/patch.asm
 
-.PHONY: all verify rom patch clean distclean docker-image docker-rom docker-shell
+.PHONY: all verify rom patch clean distclean docker-image docker-rom docker-shell docker-shot
 
 all: rom
 
@@ -59,6 +59,14 @@ docker-image:
 
 docker-rom:
 	$(DOCKER_RUN) make rom
+
+# Frame capture. Defaults to the Capcom logo screen, where the demo text lands.
+FRAMES ?= 430
+DUMP   ?= 420
+SHOT   ?= $(OUT)
+
+docker-shot:
+	$(DOCKER_RUN) python3 tools/headless.py $(SHOT) --frames $(FRAMES) --dump $(DUMP)
 
 docker-shell:
 	docker run --rm -it -v "$(CURDIR)":/work \
