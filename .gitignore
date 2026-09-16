@@ -1,0 +1,9 @@
+# ROMs are never committed - supply your own dump.
+rom/
+*.sfc
+*.smc
+*.swc
+*.fig
+
+build/
+rom.lock
