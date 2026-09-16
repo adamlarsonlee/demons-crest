@@ -232,15 +232,68 @@ Dead ends, recorded so they are not repeated:
 - The world map is unusable as a progress observable because Firebrand's
   position on it dominates any pixel diff.
 
-## This is where a debugging emulator becomes necessary
+## Watchpoints in the instrumented core
 
-Targets 2, 3, 4 and 6 all need to answer "what code touches this address", which
-means write-breakpoints and single-stepping. The headless harness cannot do that
-— it can observe state and force values, but it cannot watch execution.
+`docker/snes9x-watchpoints.patch` adds watchpoints to the libretro core, giving
+the headless setup the one thing it previously lacked: the ability to see *which
+code* touches an address. The snes9x commit is pinned in the Dockerfile because
+the patch is applied against it. Output goes to stderr.
 
-A write-breakpoint on `$7E:0088` would resolve target 2 immediately by showing
-what writes it and what that code reads first. This is no longer a convenience;
-it is the blocker for the remaining recon.
+```sh
+# what writes this WRAM address?
+docker run --rm -v "$PWD":/work -e S9X_WATCH_WRITE=0088 -e S9X_WATCH_LIMIT=60 \
+    demons-crest-build python3 tools/headless.py build/nmi.sfc \
+    --load-state states/allitems.state --frames 700 --press '10:y,11:y'
+
+# what reads this ROM range, and with what index?
+docker run --rm -v "$PWD":/work -e S9X_WATCH_READ='81A291-81A400' \
+    demons-crest-build python3 tools/headless.py ...
+```
+
+- `S9X_WATCH_WRITE` — WRAM addresses, bare offsets (`0088`) or bank-qualified
+  (`7E0088`). Matching resolves the WRAM mirror, so a write via `$00:0088` is
+  caught as well as one via `$7E:0088`; games normally use the low-RAM mirror,
+  so matching on the raw address alone would miss nearly everything.
+- `S9X_WATCH_READ` — ranges of full addresses, e.g. `81A291-81A400`.
+- `S9X_WATCH_LIMIT` — cap on logged hits (default 200).
+
+Each hit logs the PC plus A, X, Y, D and DB, which is what makes an indexed
+table read interpretable. Both `S9xSetByte`/`S9xSetWord` and
+`S9xGetByte`/`S9xGetWord` are hooked, because the word paths have a fast case
+that bypasses the byte ones. Verified to cause no behavioural change: a frame
+captured with the patched core is byte-identical to one from the unpatched core.
+
+## $7E:0088 is not the level index
+
+The watchpoint disproved the lead immediately. `$0088` is written repeatedly
+from `$80:BCC8` with values stepping `00 02 04 06 08 0A 0C`, which is a loop or
+table counter. That also explains the earlier symptoms: a single poke did
+nothing lasting, and forcing the value every frame hung the game by corrupting
+a loop counter.
+
+## Level-load code and data, so far
+
+From read-watching during a level entry:
+
+| Address | Role |
+|---------|------|
+| `$80:BBA4`, `$80:BCC8` | write the `$0088` loop counter during load |
+| `$80:C5D2` | reads a 2-byte table entry — the first level-data lookup seen |
+| `$80:C5FE`, `$80:C61E`, `$80:C62C` | read level data sequentially, indexed by Y |
+| `$81:A342`-`$81:A3xx` | level data being read |
+
+At `$80:C5D2` the read lands on `$81:A355` with `Y=2`, implying a base around
+`$81:A353`. Immediately after, A holds `$A342` while reading `$81:A342`, i.e. a
+pointer was fetched and then followed.
+
+**abyssonym's ROM map appears to be for the US release.** His index-5 example
+says the pointer at `a29b` holds `$A3E0`; on the JP ROM that word is `$A53C`,
+and no instruction references his table addresses. The JP level tables are in
+the same neighbourhood but at different offsets, so his notes are a guide to
+*structure*, not to addresses.
+
+Going further needs a 65816 disassembler to read `$80:C5C0`-`$80:C640`, which is
+the natural next tool.
 
 ### Screen observables
 

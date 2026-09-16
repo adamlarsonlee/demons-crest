@@ -1,0 +1,219 @@
+diff --git a/getset.h b/getset.h
+index bd3b365..d1965b9 100644
+--- a/getset.h
++++ b/getset.h
+@@ -17,6 +17,7 @@
+ #include "seta.h"
+ #include "bsx.h"
+ #include "msu1.h"
++#include "watchpoint.h"
+ 
+ #define addCyclesInMemoryAccess \
+ 	if (!CPU.InDMAorHDMA) \
+@@ -57,6 +58,8 @@ static inline int32 memory_speed (uint32 address)
+ 
+ inline uint8 S9xGetByte (uint32 Address)
+ {
++	s9x_watch_read(Address, 1, Registers.PBPC);
++
+ 	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
+ 	uint8	*GetAddress = Memory.Map[block];
+ 	int32	speed = memory_speed(Address);
+@@ -170,6 +173,8 @@ inline uint8 S9xGetByte (uint32 Address)
+ 
+ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
+ {
++	s9x_watch_read(Address, 2, Registers.PBPC);
++
+ 	uint16	word;
+ 
+ 	uint32	mask = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
+@@ -339,6 +344,8 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
+ 
+ inline void S9xSetByte (uint8 Byte, uint32 Address)
+ {
++	s9x_watch_write(Address, Byte, 1, Registers.PBPC);
++
+ 	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
+ 	uint8	*SetAddress = Memory.WriteMap[block];
+ 	int32	speed = memory_speed(Address);
+@@ -450,6 +457,8 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
+ 
+ inline void S9xSetWord (uint16 Word, uint32 Address, enum s9xwrap_t w = WRAP_NONE, enum s9xwriteorder_t o = WRITE_01)
+ {
++	s9x_watch_write(Address, Word, 2, Registers.PBPC);
++
+ 	uint32	mask = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
+ 	if ((Address & mask) == mask)
+ 	{
+diff --git a/watchpoint.h b/watchpoint.h
+new file mode 100644
+index 0000000..7dd3742
+--- /dev/null
++++ b/watchpoint.h
+@@ -0,0 +1,165 @@
++/* Reverse-engineering aid, not part of upstream Snes9x.
++ *
++ * Logs the program counter whenever a watched WRAM location is written, which
++ * is the headless equivalent of a debugger write-breakpoint.
++ *
++ * Configure with environment variables:
++ *   S9X_WATCH_WRITE  comma-separated hex addresses. Either a bare WRAM offset
++ *                    ("0088", "1C700") or a bank-qualified address ("7E0088").
++ *   S9X_WATCH_LIMIT  maximum number of hits to log (default 200).
++ *   S9X_WATCH_READ   comma-separated ranges of full addresses to log reads of,
++ *                    e.g. "81A1A9-81A1FF". Useful for catching a table lookup:
++ *                    the read address minus the table base gives the index.
++ *
++ * WRAM is mirrored, so a write to $00:0088 and one to $7E:0088 reach the same
++ * byte. Matching is done on the resolved WRAM offset rather than the raw
++ * address, because games normally use the low-RAM mirror.
++ */
++
++#ifndef _WATCHPOINT_H_
++#define _WATCHPOINT_H_
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define S9X_WATCH_MAX 8
++
++static inline int s9x_wram_offset (unsigned int address)
++{
++	unsigned int bank = (address >> 16) & 0xFF;
++	unsigned int off  = address & 0xFFFF;
++
++	if (bank == 0x7E)
++		return (int) off;
++	if (bank == 0x7F)
++		return (int) (0x10000 + off);
++	if ((bank <= 0x3F || (bank >= 0x80 && bank <= 0xBF)) && off < 0x2000)
++		return (int) off;
++	return -1;
++}
++
++static inline void s9x_watch_write (unsigned int address, unsigned int value,
++                                    int size, unsigned int pbpc)
++{
++	static int  inited = 0;
++	static int  list[S9X_WATCH_MAX];
++	static int  count = 0;
++	static long budget = 0;
++
++	if (!inited)
++	{
++		const char *spec, *lim;
++		inited = 1;
++		spec = getenv("S9X_WATCH_WRITE");
++		lim  = getenv("S9X_WATCH_LIMIT");
++		budget = lim ? strtol(lim, NULL, 0) : 200;
++		if (spec)
++		{
++			char  buf[256];
++			char *tok;
++			strncpy(buf, spec, sizeof(buf) - 1);
++			buf[sizeof(buf) - 1] = 0;
++			tok = strtok(buf, ",");
++			while (tok && count < S9X_WATCH_MAX)
++			{
++				unsigned int a = (unsigned int) strtoul(tok, NULL, 16);
++				int off = (a > 0xFFFF) ? s9x_wram_offset(a) : (int) a;
++				if (off >= 0)
++					list[count++] = off;
++				tok = strtok(NULL, ",");
++			}
++		}
++	}
++
++	if (count == 0 || budget <= 0)
++		return;
++
++	{
++		int off = s9x_wram_offset(address);
++		int i;
++		if (off < 0)
++			return;
++		for (i = 0; i < count; i++)
++		{
++			if (off == list[i] || (size == 2 && off + 1 == list[i]))
++			{
++				fprintf(stderr,
++				        "[watch] write $%06X (wram $%05X) = %0*X  PC $%02X:%04X  "
++				        "A=%04X X=%04X Y=%04X D=%04X DB=%02X\n",
++				        address & 0xFFFFFF, off, size * 2, value,
++				        (pbpc >> 16) & 0xFF, pbpc & 0xFFFF,
++				        Registers.A.W, Registers.X.W, Registers.Y.W,
++				        Registers.D.W, Registers.DB);
++				fflush(stderr);
++				budget--;
++				break;
++			}
++		}
++	}
++}
++
++
++#define S9X_WATCH_RANGES 8
++
++static inline void s9x_watch_read (unsigned int address, int size,
++                                   unsigned int pbpc)
++{
++	static int          inited = 0;
++	static unsigned int lo[S9X_WATCH_RANGES], hi[S9X_WATCH_RANGES];
++	static int          count = 0;
++	static long         budget = 0;
++
++	if (!inited)
++	{
++		const char *spec, *lim;
++		inited = 1;
++		spec = getenv("S9X_WATCH_READ");
++		lim  = getenv("S9X_WATCH_LIMIT");
++		budget = lim ? strtol(lim, NULL, 0) : 200;
++		if (spec)
++		{
++			char  buf[256];
++			char *tok;
++			strncpy(buf, spec, sizeof(buf) - 1);
++			buf[sizeof(buf) - 1] = 0;
++			tok = strtok(buf, ",");
++			while (tok && count < S9X_WATCH_RANGES)
++			{
++				char *dash = strchr(tok, '-');
++				unsigned int a = (unsigned int) strtoul(tok, NULL, 16);
++				unsigned int b = dash ? (unsigned int) strtoul(dash + 1, NULL, 16) : a;
++				lo[count] = a;
++				hi[count] = b;
++				count++;
++				tok = strtok(NULL, ",");
++			}
++		}
++	}
++
++	if (count == 0 || budget <= 0)
++		return;
++
++	{
++		unsigned int a = address & 0xFFFFFF;
++		int i;
++		for (i = 0; i < count; i++)
++		{
++			if (a >= lo[i] && a <= hi[i])
++			{
++				fprintf(stderr,
++				        "[watch] read  $%06X (+%04X) size %d  PC $%02X:%04X  "
++				        "A=%04X X=%04X Y=%04X D=%04X DB=%02X\n",
++				        a, a - lo[i], size,
++				        (pbpc >> 16) & 0xFF, pbpc & 0xFFFF,
++				        Registers.A.W, Registers.X.W, Registers.Y.W,
++				        Registers.D.W, Registers.DB);
++				fflush(stderr);
++				budget--;
++				break;
++			}
++		}
++	}
++}
++
++#endif

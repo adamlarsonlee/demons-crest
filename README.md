@@ -44,8 +44,10 @@ make docker-shot    # capture frames to build/frames as PNG
 make docker-shell   # interactive
 ```
 
-The image also carries a headless libretro core, so a ROM change can be
-verified visually — and WRAM/VRAM inspected — without any GUI emulator:
+The image also carries a headless libretro core, patched with watchpoints, so a
+ROM change can be verified visually, WRAM/VRAM inspected, and the code touching
+an address identified — all without a GUI emulator. See `docs/recon.md` for the
+`S9X_WATCH_*` variables.
 
 ```sh
 make docker-shot FRAMES=3410 DUMP=3400        # title screen
