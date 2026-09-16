@@ -183,11 +183,33 @@ a contiguous 8-byte block at `$7E:1E50`-`$1E57`: max HP plus 56 flag bits, of
 which `$1E56` and `$1E57` were previously unmapped. Max HP rises monotonically
 across the six states.
 
-State blocks are therefore viable exactly as in RockmanXPractice. The remaining
-uncertainty is `$1E44`, which differs between two saves whose `$1E50`-`$1E57`
-are byte-identical, so it depends on something later in the block — plausibly a
-checksum. That needs settling before writing state blocks, because a wrong
-checksum may make the game reject or corrupt a loaded state.
+State blocks are therefore viable exactly as in RockmanXPractice, and this has
+been demonstrated rather than assumed: poking the eight bytes from an all-items
+save into a level-2 save yields an in-level item menu **pixel-identical** to the
+genuine all-items save, with max HP updated to match.
+
+`$1E44` turned out not to be a blocker. It was suspected to be a checksum over
+the block, which would have had to be computed for any written state. In fact it
+is stable during play but **recomputed by the game on level load** — after the
+poke it moved from `47` to `7C` on its own, and the resulting state was correct.
+So a state block does not need to supply it. It is not a per-frame value either
+(stable across 60 frames on the overworld), and it still depends on something
+beyond `$1E50`-`$1E57`, since two saves with identical blocks hold different
+values. Its exact meaning remains unidentified, but nothing depends on that now.
+
+### Screen observables
+
+Useful for verifying state changes headlessly:
+
+| Context | Input | Result |
+|---------|-------|--------|
+| Overworld | Start | World map with numbered stages |
+| Overworld | Y | Enter the stage |
+| In a level | Start | Item menu — the definitive view of the progress block |
+
+The world map is a poor observable for progress, because Firebrand's position
+on it differs between saves and dominates a pixel diff. The in-level item menu
+is the reliable one.
 
 ## ROM identity
 

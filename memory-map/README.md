@@ -28,7 +28,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E54	|2|Binary|Max HP+|Each bit is mapped to a specific max health increase pickup, not sure yet which bits map to which drop but 0000 0000 0000 0001 is Somulo, obviously
 |001E56	|1|Binary|Progress flags (boss/stage)|Not previously mapped. Found by diffing password-loaded saves; goes 81 -> FF as the game is completed
 |001E57	|1|Binary|Progress flags, continued|Only the low two bits are used
-|001E44 |1|Unsigned|Probably a progress checksum|Differs between saves whose $1E50-$1E57 are identical, so it depends on later bytes. Purpose unverified
+|001E44 |1|Unsigned|Derived from progress; do not write|Stable during play but recomputed by the game on level load. Differs between saves whose $1E50-$1E57 are identical, so it depends on more than that block. A state block does not need to supply it. Exact meaning still unidentified
 |001054 |Unsure|Binary?|Selected form|0 is Firebrand and the first bit is crazy (I dare you to set it to 1), but not I'm not sure exactly how this works yet and there are more addresses required to load in graphics
 
 
@@ -55,6 +55,11 @@ practice ROM, in the same way RockmanXPractice uses one 48-byte region.
 
 Data from `$1E58` to roughly `$1E70` also varies between saves but has not been
 identified, and may be incidental rather than progress.
+
+Writing this block is sufficient on its own. Poking the eight bytes from an
+all-items save into a level-2 save produces an in-level item menu that is
+**pixel-identical** to the genuine all-items save, and the game recomputes
+`$1E44` by itself. Nothing rejected or corrupted the written state.
 
 # Scroll and Phial Contents
 
