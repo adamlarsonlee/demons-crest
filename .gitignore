@@ -7,3 +7,6 @@ rom/
 
 build/
 rom.lock
+
+# Save states are derived from the ROM.
+states/

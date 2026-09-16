@@ -156,14 +156,42 @@ class Core:
     def run(self):
         self.lib.retro_run()
 
+    def serialize(self):
+        self.lib.retro_serialize_size.restype = ctypes.c_size_t
+        self.lib.retro_serialize.restype = ctypes.c_bool
+        n = self.lib.retro_serialize_size()
+        if not n:
+            raise RuntimeError("core reports a zero-size save state")
+        buf = ctypes.create_string_buffer(n)
+        if not self.lib.retro_serialize(buf, n):
+            raise RuntimeError("retro_serialize failed")
+        return buf.raw
+
+    def unserialize(self, data):
+        self.lib.retro_unserialize.restype = ctypes.c_bool
+        buf = ctypes.create_string_buffer(data, len(data))
+        if not self.lib.retro_unserialize(buf, len(data)):
+            raise RuntimeError("retro_unserialize failed")
+
     def memory(self, kind):
-        self.lib.retro_get_memory_data.restype = ctypes.c_void_p
-        self.lib.retro_get_memory_size.restype = ctypes.c_size_t
-        ptr = self.lib.retro_get_memory_data(kind)
-        size = self.lib.retro_get_memory_size(kind)
-        if not ptr or not size:
+        ptr, size = self._mem_ptr(kind)
+        if not ptr:
             return None
         return ctypes.string_at(ptr, size)
+
+    def _mem_ptr(self, kind):
+        self.lib.retro_get_memory_data.restype = ctypes.c_void_p
+        self.lib.retro_get_memory_size.restype = ctypes.c_size_t
+        return self.lib.retro_get_memory_data(kind), self.lib.retro_get_memory_size(kind)
+
+    def poke(self, kind, offset, value):
+        """Write one byte into core memory, for probing candidate addresses."""
+        ptr, size = self._mem_ptr(kind)
+        if not ptr:
+            raise RuntimeError("core exposes no such memory region")
+        if not 0 <= offset < size:
+            raise RuntimeError(f"offset 0x{offset:X} outside 0..0x{size-1:X}")
+        ctypes.memmove(ctypes.c_void_p(ptr + offset), bytes((value & 0xFF,)), 1)
 
 
 def main():
@@ -177,6 +205,11 @@ def main():
     ap.add_argument("--prefix", default="frame")
     ap.add_argument("--dump-wram", default="", help="comma-separated frame numbers")
     ap.add_argument("--dump-vram", default="", help="comma-separated frame numbers")
+    ap.add_argument("--load-state", help="restore this state before running; "
+                                         "frame numbers then count from the restore")
+    ap.add_argument("--save-state", default="", help="frame:path")
+    ap.add_argument("--poke", default="",
+                    help="frame:addr=value[,...]; addr is a WRAM offset or $7Exxxx/$7Fxxxx")
     args = ap.parse_args()
 
     wanted = {int(x) for x in args.dump.split(",") if x.strip()}
@@ -187,11 +220,35 @@ def main():
         f, btn = item.split(":")
         schedule.setdefault(int(f), []).append(BUTTONS[btn.strip().lower()])
 
+    def parse_addr(text):
+        text = text.strip()
+        if text.startswith("$"):
+            v = int(text[1:], 16)
+            if 0x7E0000 <= v <= 0x7FFFFF:
+                return v - 0x7E0000
+            raise SystemExit(f"bank address {text} is outside WRAM $7E0000-$7FFFFF")
+        return int(text, 0)
+
+    pokes = {}
+    for item in filter(None, args.poke.split(",")):
+        f, assign = item.split(":", 1)
+        addr, value = assign.split("=", 1)
+        pokes.setdefault(int(f), []).append((parse_addr(addr), int(value, 0)))
+
+    saves = {}
+    for item in filter(None, args.save_state.split(",")):
+        f, path = item.split(":", 1)
+        saves[int(f)] = path
+
     core = Core(args.core)
     av = core.load(args.rom)
     print(f"loaded  {args.rom}")
     print(f"geometry {av.geometry.base_width}x{av.geometry.base_height}  "
           f"fps {av.timing.fps:.2f}  pixel_fmt {core.pixel_fmt}")
+
+    if args.load_state:
+        core.unserialize(Path(args.load_state).read_bytes())
+        print(f"restored {args.load_state}")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -199,6 +256,9 @@ def main():
     for f in range(1, args.frames + 1):
         core.pressed = set(schedule.get(f, []))
         core.run()
+        for addr, value in pokes.get(f, ()):
+            core.poke(MEM_SYSTEM_RAM, addr, value)
+            print(f"  frame {f}: poked WRAM 0x{addr:05X} = 0x{value:02X}")
         if f in wanted:
             if not core.frame:
                 print(f"  frame {f}: no video yet")
@@ -224,6 +284,11 @@ def main():
                 print(f"  wrote {out}  ({len(d):,} bytes)")
             else:
                 print(f"  frame {f}: core exposes no video RAM")
+        if f in saves:
+            path = Path(saves[f])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(core.serialize())
+            print(f"  saved {path}  ({path.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

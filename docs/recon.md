@@ -132,6 +132,40 @@ vertical gradient of `14` (top row) through `13`/`12` (middle) to `11` (bottom).
 which is how the "PRACTICE" demo on the opening screen is produced. It is a
 data-only change, so it carries no crash risk.
 
+## The password screen
+
+Demon's Crest has no SRAM because it saves via passwords, which means a
+password encodes the whole progress state. Entering a known one and diffing
+WRAM against a fresh boot should reveal the progress-flag region directly.
+
+Route from a cold boot: the title logo appears around frame 3400; Start (or Y)
+opens a **START / CONTINUE / OPTIONS** menu; CONTINUE opens password entry.
+Nothing else on the logo screen does anything.
+
+The entry screen is a 4x4 grid of 16 characters, each defaulting to `B`:
+
+- d-pad moves the cursor; Down from the bottom row reaches `END`, then `EXIT`
+- **B** cycles the character under the cursor, wrapping through 21 entries:
+  `B Z Y X W V T S R Q P N M L K J H G F D C`
+- sorted, that alphabet is `BCDFGHJKLMNPQRSTVWXYZ` — every letter except the
+  vowels `A E I O U`
+- **A**, **Y** or **Start** on `END` submits; a bad password prints
+  `PASS WORD ERROR!`
+
+So a valid password is 16 characters, consonants only. Anything containing a
+vowel belongs to a different game or region.
+
+`tools/mkpassword.py` converts a password into a `--press` schedule, verified
+by entering `BCDFGHJKLMNPQRST` and reading the grid back off the screen.
+
+## Probing memory directly
+
+`headless.py --poke frame:$7FC750=0xA5` writes into WRAM through the core's
+memory pointer. This gives a second, password-free route to the progress
+flags: set a candidate address and observe whether the in-game menus or
+overworld change. It confirms addresses rather than discovering them, so it
+complements the password diff rather than replacing it.
+
 ## The central hypothesis
 
 `memory-map/README.md` places items, powers, crests, urns, talismans and HP

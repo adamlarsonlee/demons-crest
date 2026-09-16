@@ -14,7 +14,8 @@ JP-only; the English ROM has different mappings.
 | `memory-map/` | documented RAM addresses |
 | `mesen-s/` | Mesen-S label file |
 | `watch/` | RAM watch files, per boss |
-| `tools/` | ROM identification, patch generation, headless capture |
+| `tools/` | ROM identification, patch generation, headless capture, password entry |
+| `states/` | Save states (gitignored, regenerate with `headless.py --save-state`) |
 | `docs/` | recon plan and design notes |
 
 ## Building
