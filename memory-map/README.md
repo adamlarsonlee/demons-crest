@@ -58,19 +58,42 @@ why `$1E57` only ever showed its low two bits set.
 `$85:A1EE` (USA) is the stage-reveal requirement function; it gates Phalanx on
 `lda $1E56 : and #$001F : cmp #$001F`, i.e. all five vellums.
 
-## Corrections to src/lua/items/items.lua
+## Two representations, and what items.lua actually reads
 
-The mapping above contradicts `items.lua` in three places. All three are bugs:
+There are two places this data lives, which resolves an apparent contradiction.
 
-|Item|items.lua has|Should be|
-|----|-------------|---------|
-|Vellum 1-5|`$1E52` bits 1-5|`$1E56` bits 0-4|
-|Urns / Potions 1-5|`$1E52` bits 6-7, `$1E53` bits 0-2|`$1E56` bits 5-7, `$1E57` bits 0-1|
-|Talisman Crown, Skull|`$1E52` bits 3-4|`$1E53` bits 3-4|
+**Source flags**, set when an item is collected:
 
-Talisman Armor, Fang and Hand (`$1E53` bits 5-7) are already correct. The
-Crown/Skull error also made them collide with the Vellum entries, so the
-completion percentage double-counted.
+- `$1E56` bits 0-4 vellums, bits 5-7 potions 1-3
+- `$1E57` bits 0-1 potions 4-5
+
+**A derived mirror**, recomputed by `$82:E11F`-`$82:E148` on the JP ROM:
+
+```
+LDA $1E56 : AND #$001F          ; vellum bits
+JSR $E17A                       ; spread 5 flags, mask starting at $0002 = bit 1
+LDA #$0040 : STA $0002          ; potion mask starts at bit 6
+LDA $1E56 : AND #$03E0          ; potion bits ($1E56 5-7 + $1E57 0-1)
+LSR A x5 : JSR $E17A
+LDA #$07FE : TRB $1E52          ; clear bits 1-10
+LDA $0000  : TSB $1E52          ; write the spread result
+```
+
+So the mirror occupies the 16-bit field at `$1E52`:
+
+|Address|Bit|Contents (derived)|
+|-------|---|------------------|
+|`$1E52`|1-5|Vellums 1-5|
+|`$1E52`|6-7|Potions 1-2|
+|`$1E53`|0-2|Potions 3-5|
+
+`src/lua/items/items.lua` reads this mirror, which is legitimate — the game
+maintains it. Its vellum and urn entries are **correct**.
+
+The one genuine error is the talismans: `items.lua` places Crown and Skull at
+`$1E52` bits 3-4, where they collide with derived Vellum 3 and Vellum 4. Per
+`Item::completion_data()` they belong at `$1E53` bits 3-4. Armor, Fang and Hand
+(`$1E53` bits 5-7) are already right.
 
 # Progress Block
 
