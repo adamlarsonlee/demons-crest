@@ -1,5 +1,5 @@
 diff --git a/getset.h b/getset.h
-index bd3b365..b4a2248 100644
+index bd3b365..eef8acc 100644
 --- a/getset.h
 +++ b/getset.h
 @@ -17,6 +17,7 @@
@@ -28,32 +28,34 @@ index bd3b365..b4a2248 100644
  	uint16	word;
  
  	uint32	mask = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
-@@ -339,6 +344,9 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
+@@ -339,6 +344,10 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
  
  inline void S9xSetByte (uint8 Byte, uint32 Address)
  {
 +	s9x_watch_write(Address, Byte, 1, Registers.PBPC);
 +	s9x_watch_wrange(Address, Byte, 1, Registers.PBPC);
++	s9x_watch_reg(Address, Byte, 1, Registers.PBPC);
 +
  	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
  	uint8	*SetAddress = Memory.WriteMap[block];
  	int32	speed = memory_speed(Address);
-@@ -450,6 +458,9 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
+@@ -450,6 +459,10 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
  
  inline void S9xSetWord (uint16 Word, uint32 Address, enum s9xwrap_t w = WRAP_NONE, enum s9xwriteorder_t o = WRITE_01)
  {
 +	s9x_watch_write(Address, Word, 2, Registers.PBPC);
 +	s9x_watch_wrange(Address, Word, 2, Registers.PBPC);
++	s9x_watch_reg(Address, Word, 2, Registers.PBPC);
 +
  	uint32	mask = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
  	if ((Address & mask) == mask)
  	{
 diff --git a/watchpoint.h b/watchpoint.h
 new file mode 100644
-index 0000000..a2b6272
+index 0000000..e982b6f
 --- /dev/null
 +++ b/watchpoint.h
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,286 @@
 +/* Reverse-engineering aid, not part of upstream Snes9x.
 + *
 + * Logs the program counter whenever a watched WRAM location is written, which
@@ -66,6 +68,10 @@ index 0000000..a2b6272
 + *   S9X_WATCH_WRANGE comma-separated ranges of WRAM offsets to log all writes
 + *                    to, e.g. "0000-01FF". Diffing two runs' logs finds a
 + *                    value that differs between them.
++ *   S9X_WATCH_REG    comma-separated ranges of hardware register addresses to
++ *                    log writes to, matched on the low 16 bits so bank
++ *                    mirroring does not matter, e.g. "4302-4304" for the DMA
++ *                    source address.
 + *   S9X_WATCH_READ   comma-separated ranges of full addresses to log reads of,
 + *                    e.g. "81A1A9-81A1FF". Useful for catching a table lookup:
 + *                    the read address minus the table base gives the index.
@@ -207,6 +213,64 @@ index 0000000..a2b6272
 +				fprintf(stderr, "[wrange] $%05X = %0*X  PC $%02X:%04X\n",
 +				        off, size * 2, value,
 +				        (pbpc >> 16) & 0xFF, pbpc & 0xFFFF);
++				fflush(stderr);
++				budget--;
++				break;
++			}
++		}
++	}
++}
++
++static inline void s9x_watch_reg (unsigned int address, unsigned int value,
++                                  int size, unsigned int pbpc)
++{
++	static int          inited = 0;
++	static unsigned int lo[8], hi[8];
++	static int          count = 0;
++	static long         budget = 0;
++
++	if (!inited)
++	{
++		const char *spec, *lim;
++		inited = 1;
++		spec = getenv("S9X_WATCH_REG");
++		lim  = getenv("S9X_WATCH_LIMIT");
++		budget = lim ? strtol(lim, NULL, 0) : 200;
++		if (spec)
++		{
++			char  buf[256];
++			char *tok;
++			strncpy(buf, spec, sizeof(buf) - 1);
++			buf[sizeof(buf) - 1] = 0;
++			tok = strtok(buf, ",");
++			while (tok && count < 8)
++			{
++				char *dash = strchr(tok, '-');
++				lo[count] = (unsigned int) strtoul(tok, NULL, 16);
++				hi[count] = dash ? (unsigned int) strtoul(dash + 1, NULL, 16) : lo[count];
++				count++;
++				tok = strtok(NULL, ",");
++			}
++		}
++	}
++
++	if (count == 0 || budget <= 0)
++		return;
++
++	{
++		unsigned int a = address & 0xFFFF;
++		int i;
++		if (a < 0x2000 || a > 0x43FF)
++			return;
++		for (i = 0; i < count; i++)
++		{
++			if (a >= lo[i] && a <= hi[i])
++			{
++				fprintf(stderr, "[reg] $%04X = %0*X  PC $%02X:%04X  "
++				        "A=%04X X=%04X Y=%04X\n",
++				        a, size * 2, value,
++				        (pbpc >> 16) & 0xFF, pbpc & 0xFFFF,
++				        Registers.A.W, Registers.X.W, Registers.Y.W);
 +				fflush(stderr);
 +				budget--;
 +				break;

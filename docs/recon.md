@@ -14,7 +14,7 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | open | `$7E:008D` is a screen/mode type, not the area. See the retraction below |
+| 2 | `current_level` | partial | `$7E:1D82` is the area's **graphics** index; the layout selector is still open |
 | 3 | Level-load entry | partial | Per-mode setups and loops found; the area-specific load path is not |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
@@ -343,6 +343,76 @@ sin/cos pair. `X` there is a transition-effect angle, not an area.
 
 So area selection is either driven by data outside bank `$81` or reached
 through a pointer computed in RAM.
+
+### The area graphics path
+
+Found by working backwards from the data rather than by diffing variables,
+which is the only method here that has produced correct answers.
+
+Two areas that differ reliably: `states/allitems.state` + Y enters a
+tree-and-torches area, `states/bossrush.state` + Y enters the castle. The other
+password states all enter the same area as `allitems`. **Overworld navigation
+is not a reliable way to reach a second area** — flying right for 250, 350, 450
+or 550 frames and then pressing Y all enter the same place.
+
+Matching VRAM against the ROM shows each area loads VRAM `$C000` from a
+different source:
+
+| Area | VRAM `$C000` source |
+|------|---------------------|
+| tree | `0x0D0000` = `$9A:8000` |
+| castle | `0x0D4C80` = `$9A:CC80` |
+
+Tracing that backwards:
+
+```
+$7E:0500+            DMA queue, 8-byte entries:
+                       +1 VRAM address   +3 size
+                       +5 source address +7 source bank
+                     end pointer in $81
+$80:85B4             drains the queue, one DMA per entry
+$84:9DAC             fills it, walking a 3-byte-entry graphics list
+                       tree list at $C144, castle list at $C18E
+$81:C0EE             per-area table of those list pointers, indexed by area x2
+                       entry 2 = $C144 (tree), entry 7 = $C18E (castle)
+$84:9C60             takes the area index in A:
+                       AND #$00FF / STA $0000 / ASL A / TAY
+                       LDA $C0EE,Y / TAY
+                       LDA $0000 / STA $1D82,X
+$7E:1D82             the stored area index: 02 for tree, 07 for castle
+```
+
+`$7E:1D82` is stable across frames and matches the table entry exactly in both
+areas, so the index and the table agree independently.
+
+**Scope, honestly:** forcing A to 7 at `$84:9C60` does store `$1D82 = 07` and
+changes some graphics, but the level still loads as the tree area — only 1927
+subpixels differ. So this is the **graphics** half of the area load. Whatever
+selects the layout is a separate consumer of the index and is still unfound.
+Poking `$7E:1D82` directly has no effect at all, because the game writes it
+during the load from `$84:9C71`.
+
+### Closed leads
+
+Each of these looked like the area index and is not. Recorded so they are not
+retried:
+
+| Address / site | What it actually is |
+|----------------|---------------------|
+| `$7E:008D` | screen/mode type: `$BC` overworld, `02` in level |
+| `$7E:0088`, `$7E:0089` | sound command queue indices (`AND #$3E`, 32 entries) |
+| `$7E:0920`-`$095F` | the sound command ring buffer itself; `$092C` is slot 6 |
+| `$7E:0073` | frame counter, incremented in the overworld loop |
+| `$7E:008F` | allocation counter, `+= $0B` per call at `$84:9CD7` |
+| `$7E:0100`-`$01FF` | the stack |
+| `$80:C5B2` | shared data loader; byte-identical across two destinations |
+| `$81:C371` | sine table, read with `X` and `$5A - X` |
+
+Two process notes. Diffing WRAM between two loads surfaces counters and buffers
+by the hundred, because a level load touches everything; it produced no correct
+answer here. And an earlier comparison was invalid because both "destinations"
+were the same area — worth verifying that two states actually differ, visually,
+before drawing conclusions from a diff between them.
 
 ### Per-mode loops, and the shared frame-sync routine
 
