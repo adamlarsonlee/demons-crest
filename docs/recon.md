@@ -17,7 +17,7 @@ watched live and written to before being committed to assembly.
 | 2 | `current_level` | open | Warp destination |
 | 3 | Level-load entry | open | Triggers the warp |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
-| 5 | Frame hook | **found** | NMI vector `$FFA4` jumps to `$80:8329` (file `0x000329`) |
+| 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
 | 7 | Free ROM space | **mapped** | See "ROM space"; expansion required |
 
@@ -59,6 +59,58 @@ Useful frames, from a cold boot with no input:
 
 Pressing Start during the cinematic skips into gameplay by roughly frame 1400,
 which is how to reach in-game state for WRAM diffing.
+
+## Code injection is proven
+
+`src/asm/experiments/nmi_probe.asm` chains the NMI vector through injected code
+that counts frames into WRAM, then jumps on to the original handler:
+
+```
+org $80FFA4
+    JML nmi_hook      ; was JML $80:8329
+nmi_hook:
+    PHP : REP #$20 : PHA
+    LDA.l $7FC700 : INC A : STA.l $7FC700
+    PLA : PLP
+    JML $808329
+```
+
+Results:
+
+| Check | Result |
+|-------|--------|
+| Counter at frame 1000 / 3400 | 385 / 2785 — delta 2400 over 2400 frames, exactly one per NMI |
+| Title screen, hooked vs not | pixel-identical |
+| WRAM, hooked vs not (no input) | differs only in our counter and page `$01` (stack residue) |
+| ROM gap `$90:8000` | genuinely free: code present but unexecuted gives a pixel-identical frame |
+
+The counter lags the frame number by ~615 because the RESET stub disables NMI
+and the game enables it later.
+
+Scratch WRAM is `$7F:C700`, inside `$7F:C668`-`$7F:C802`, which reads as zero
+across six sampled states (title, cinematic, early and later gameplay). Zero is
+evidence of being free, not proof — `$7E:1E51` also reads zero early on and is
+the documented item-flag region. The counter test is self-validating: an exact
+count means nothing contended the address during the window.
+
+## NMI cycle budget is the real constraint
+
+Measured against a scripted-input gameplay run:
+
+| Hook cost | Effect |
+|-----------|--------|
+| ~30 cycles | Game state identical, shifted by exactly **one frame** (hooked frame 2549 is pixel-identical to unpatched 2550) |
+| ~4000 cycles | Gross divergence, no clean frame offset |
+
+So work at the top of NMI competes with the game's vblank-critical DMA. A
+practice menu polling hotkeys must either stay very cheap or hook after the
+game's vblank work rather than before it. Finding a late-NMI or main-loop hook
+site should come before any substantial feature code.
+
+The harness is deterministic run to run (same ROM twice gives zero differing
+subpixels), so pixel comparison is a valid regression test. When comparing a
+hooked build against stock, sweep a few frames either side: a constant offset
+means a timing shift, whereas no matching offset means real corruption.
 
 ## Locating uncompressed graphics
 

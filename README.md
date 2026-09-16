@@ -61,5 +61,10 @@ Two constraints established from the ROM itself: there is **no SRAM**, so
 config persistence needs a header change, and the ROM has **no contiguous free
 space over 891 bytes**, so it must be expanded to 4MB for practice code.
 
-A data-only demo exists in `src/asm/experiments/title_practice.asm`, which
-replaces the Capcom logo on the opening screen with the word PRACTICE.
+Two experiments under `src/asm/experiments/`:
+
+- `title_practice.asm` — data-only, replaces the Capcom logo on the opening
+  screen with the word PRACTICE.
+- `nmi_probe.asm` — chains the NMI vector through injected code, proving code
+  execution. Verified transparent to game state; see the NMI cycle budget note
+  in `docs/recon.md` before writing anything substantial into that hook.
