@@ -63,6 +63,14 @@ in area 2, and the second area produced no read in the sampled window.
 `X = area x 2`, entry 2 for S1_2 and entry 7 for S2_3b), and is a separate
 table the randomizer does not touch.
 
+## Progress bits
+
+`Item::completion_data()` yields the full progress-block bit mapping, with
+offsets relative to `$1E51`. Because WRAM is shared between regions this applies
+directly to the JP ROM, and it has been checked against password-loaded saves
+here. The table lives in `memory-map/README.md`, along with three resulting
+corrections to `src/lua/items/items.lua`.
+
 ## Other useful details
 
 - The randomizer identifies its expected USA ROM by CRC32 `0xC47D3B82`.

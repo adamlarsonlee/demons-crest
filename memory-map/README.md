@@ -32,6 +32,46 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001054 |Unsure|Binary?|Selected form|0 is Firebrand and the first bit is crazy (I dare you to set it to 1), but not I'm not sure exactly how this works yet and there are more addresses required to load in graphics
 
 
+# Progress Block Bit Mapping
+
+Complete mapping, cross-checked two ways: taken from `Item::completion_data()`
+in `FredYeye/Demon-s-Crest-Rando` (whose offsets are relative to `$1E51`, per
+`mod.rs` writing `completion_data().0 + 0x51`), and verified against WRAM dumps
+from password-loaded saves on this JP ROM.
+
+|Address|Bit|Contents|
+|-------|---|--------|
+|`$1E51`|0-3|Buster, Tornado, Claw, Demon Fire|
+|`$1E51`|4-7|Earth Crest, Air Crest, Water Crest, Time Crest|
+|`$1E52`|0|Ultimate / Infinity crest (the randomizer tests it as `$1E51` bit 8)|
+|`$1E53`|3-7|Talismans: Crown, Skull, Armor, Fang, Hand|
+|`$1E54`|0-7|HP upgrades 1-8|
+|`$1E55`|0-7|HP upgrades 9-16|
+|`$1E56`|0-4|**Vellums 1-5**|
+|`$1E56`|5-7|Potions 1-3|
+|`$1E57`|0-1|Potions 4-5|
+
+The all-items password gives `$1E56 = FF` and `$1E57 = 03`, which is exactly the
+set of bits this mapping defines — nothing above `$1E57` bit 1 is used. That is
+why `$1E57` only ever showed its low two bits set.
+
+`$85:A1EE` (USA) is the stage-reveal requirement function; it gates Phalanx on
+`lda $1E56 : and #$001F : cmp #$001F`, i.e. all five vellums.
+
+## Corrections to src/lua/items/items.lua
+
+The mapping above contradicts `items.lua` in three places. All three are bugs:
+
+|Item|items.lua has|Should be|
+|----|-------------|---------|
+|Vellum 1-5|`$1E52` bits 1-5|`$1E56` bits 0-4|
+|Urns / Potions 1-5|`$1E52` bits 6-7, `$1E53` bits 0-2|`$1E56` bits 5-7, `$1E57` bits 0-1|
+|Talisman Crown, Skull|`$1E52` bits 3-4|`$1E53` bits 3-4|
+
+Talisman Armor, Fang and Hand (`$1E53` bits 5-7) are already correct. The
+Crown/Skull error also made them collide with the Vellum entries, so the
+completion percentage double-counted.
+
 # Progress Block
 
 `$7E:1E50`-`$7E:1E57` is a contiguous 8-byte block holding max HP plus 56
