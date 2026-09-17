@@ -1551,6 +1551,65 @@ For a retry feature, the remaining options are to enter the damage path at
 `$80:E56B` with lethal damage in `A` (untested), or to drop the in-place retry
 and rely on exit-and-re-enter, which now works.
 
+### Why the hotkey exit lands you at the map origin
+
+Reported from real play: the exit works but drops you somewhere other than the
+stage you left. Traced, and it is a wipe rather than a misplacement.
+
+The overworld position lives in a **30-byte block at `$7E:1DFA`-`$1E17`**,
+mirrored at `$7F:F6E0`. Within it, `$1DFA`-`$1E01` are multi-layer parallax
+scroll values in 3:2:1 ratios; Firebrand is fixed centre-bottom on screen and
+the map scrolls under him, so scroll *is* position.
+
+Measured across a round trip, entering a stage from `states/ow-250.state` and
+leaving by hotkey:
+
+| | `$1DFA`-`$1E01` |
+|---|---|
+| overworld before entering | `7D C0 5D 80 3E 40 1F 50` |
+| in the level | `7D C0 5D 80 3E 40 1F 3C` — **preserved** |
+| after the hotkey exit | `00 00 00 00 00 00 00 50` — **wiped** |
+
+So the position survives the whole level visit and is destroyed on the way out.
+A write-range watch names the writers:
+
+| PC | What |
+|----|------|
+| `$85:B5B8` | the per-frame scroll update, 130 writes |
+| `$82:8B46` | 16-bit clears on level entry |
+| `$85:9976` | **the clear that costs us the position** |
+| `$85:94EB` | writes `$1E01 = $0050` |
+
+```
+$85:9971  A9 00         LDA #$00
+$85:9973  AA            TAX
+$85:9974  95 15         STA $15,X        ; D=$1DE5, so from $1DFA
+$85:9976  9F E0 F6 7F   STA $7FF6E0,X    ; and the mirror
+$85:997A  E8            INX
+$85:997B  E0 1E         CPX #$1E         ; 30 bytes
+$85:997D  D0 F5         BNE $85:9974
+$85:997F  A9 50         LDA #$50
+$85:9982  E5 33         SBC $33
+$85:9984  8D 00 00      STA $0000
+```
+
+**Falsified:** that `SBC $33` looked like it derived the landing position from
+`$1E18`, but `$1E18` reads `$00` in every overworld dump and every frame of a
+flight, so `$50 - 0 = $50` is simply the constant that ends up in `$1E01`. It
+is not a lever.
+
+**How the natural exit places you correctly is still unknown.** Reusing that
+would be the better fix by the "make the game do the work" rule, and it has not
+been found.
+
+**A workable fix that is fully in our control:** the block is intact at the
+moment our hook runs, so save `$1DFA`-`$1E17` into spare RAM before jumping to
+`$80:BB30`, then restore it from a second hook placed just after the clear loop
+at `$85:997F`. Thirty bytes each way. `$7F:C668`-`$7F:C802` is documented in
+`nmi_probe.asm` as reading zero across title, cinematic and gameplay states, so
+it can hold the copy. **Untested**, and it would land you where you *entered*
+the stage, which is above it.
+
 ### Next capture
 
 The highest-value remaining dump is **forest section 3 with the canopy

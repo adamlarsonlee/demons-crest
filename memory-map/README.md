@@ -33,6 +33,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001062 |1|Unsigned|Current HP (units)|Set from `$1E50` on level load at `$85:B09D` and on respawn at `$84:8524`
 |001063 |2|Unsigned|Zam
 |001326 |2|Unsigned|Overworld destination index|Read as `$26` with `D=$1300` at `$85:B0BA`, indexing `$81:E0F1` to produce `$8D`. Direct-page scratch reused after the load, so only meaningful during the entry itself
+|001DFA |30|Unsigned|Overworld position block|`$1DFA`-`$1E17`, mirrored at `$7F:F6E0`. `$1DFA`-`$1E01` are parallax scroll values in 3:2:1 ratios, and since Firebrand is screen-fixed the scroll is the position. Preserved across a level visit, then cleared by the loop at `$85:9974` during overworld setup - which is why a hotkey exit lands at the map origin
 |001E30 |1|Unsigned|Scroll 1 Contents|
 |001E31 |1|Unsigned|Scroll 2 Contents|
 |001E32 |1|Unsigned|Scroll 3 Contents|
