@@ -113,6 +113,29 @@ These are all mistakes already made here. Each cost real time.
    all along, doubled. An absence claim is only as wide as the encodings tested,
    so state which ones those were.
 
+## Make the game do the work
+
+The practice ROM should **trigger the game's own routines rather than reproduce
+what they do.** Every behaviour reimplemented in the patch is code that can
+diverge from the original, has to be re-derived when it breaks, and costs space
+in a ROM with 891 free bytes.
+
+Applied so far:
+
+- Exiting a stage is `$80:BB3C`'s four instructions, not a hand-rolled
+  teardown.
+- Killing Firebrand is `JMP $80:E602`, after which the animation, the HP
+  restore from `$1E50`, the three-option menu and the state dispatch are all
+  the game's.
+- First-visit versus revisit is chosen by writing the progress block and
+  letting `$85:9B39` decide, not by selecting layouts ourselves.
+- Pad edge detection is already computed at `$7E:0094`; do not recompute it.
+
+The corollary is that recon should look for **the furthest point down a path
+where the game takes over**, because that is the smallest hook. It is also why
+addressing context matters so much: entering the game's code mid-flow means
+matching `D`, `DB` and register widths, and those are what the watchpoint logs.
+
 ## Hooks
 
 Two per-frame sites are known, neither clearly better:

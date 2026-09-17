@@ -1427,6 +1427,51 @@ A safer fallback if that context turns out to be insufficient: find the entry of
 the damage routine containing `$80:E5C4` and apply lethal damage through the
 normal path, which gets the game to set up its own context.
 
+### The damage application routine
+
+```
+$80:E56B  A6 02         LDX $02        ; defence/armour index
+$80:E56D  E0 08         CPX #$08
+$80:E56F  90 01         BCC $80:E572
+$80:E571  4A            LSR A          ; halve the damage when $02 >= 8
+$80:E572  8D 00 00      STA $0000      ; stash the damage amount
+$80:E575  A5 61         LDA $61        ; HP, 16-bit, D=$1000 -> $1061/$1062
+$80:E577  38            SEC
+$80:E578  ED 00 00      SBC $0000      ; HP -= damage
+$80:E57B  85 61         STA $61
+$80:E57D  20 0D EF      JSR $EF0D
+... invulnerability, flags and sound set up through $80:E5C4 ...
+$80:E5C6  A5 61         LDA $61        ; only now is death checked
+$80:E5C8  F0 38         BEQ $80:E602
+$80:E5CA  30 36         BMI $80:E602
+```
+
+Damage arrives in `A`, is halved when the defence index at `$02` is 8 or more,
+and is subtracted from the 16-bit HP at `$1061`. The death check runs well after
+the subtraction, which is why it is not a per-frame poll.
+
+`$80:E57B` is the `STA $61` the HP watch caught as "`$80:E57D` wrote `0000` to
+`$1061`" — the clamp to zero after lethal damage, one instruction before the
+`JSR`.
+
+**Deliberately not added to the RAM map:** `$0000` and `$0002` here. They are
+general scratch whose meaning is per-routine — `$0000` is the area index during
+the level load at `$84:9C60` and the damage amount here. Mapping either as
+"damage amount" would be wrong in most contexts.
+
+**Almost nothing calls into `$80:E4xx`-`$E6xx`** — one internal `JSR $E408`
+from `$80:E404` and nothing else. So the damage handler, like the death code, is
+a player state-machine target reached through a jump table rather than a
+callable subroutine.
+
+**Which is why the death entry stays the better trigger.** Entering the damage
+path would mean supplying `A`, `$02` and `D`, and entering a state handler
+mid-flow. `$80:E602` sits further down the same path and needs only `D` plus
+whatever player-update state it inherits — and everything after it (animation,
+HP restore from `$1E50`, the three-option menu, the state dispatch) is work the
+game already does. Kept as research and as the fallback if the death entry turns
+out to need more context than `D`.
+
 ### Next capture
 
 The highest-value remaining dump is **forest section 3 with the canopy
