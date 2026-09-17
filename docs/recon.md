@@ -1023,7 +1023,7 @@ PLP`. So per task, indexed by `Y`:
 | 0 | `$80:86BE` | |
 | 1 | `$80:A7FF` | |
 | 2 | `$80:B702` | |
-| **3** | **`$80:BE9E`** | **the level load** — the `LDA #$BD`/`PLB`/`STZ $0E5E` routine that reads `$BD:9FF6` |
+| 3 | `$80:BE9E` | reads `$BD:9FF6` via `$8D`; **not** the state a level entry dispatches to — see the correction below |
 | 4 | `$84:F0EA` | |
 | 5 | `$84:A0B9` | |
 | 6 | `$84:EC3D` | |
@@ -1044,13 +1044,69 @@ area x 2; `$A0` and above encodes overworld state. Named areas stop at 59
 (`$76`), so the two ranges do not collide. The original closed-leads note
 calling `$8D` a "screen/mode type" was picking up this half of its behaviour.
 
-**Unconfirmed, and the last piece before an exit hotkey can be written:** the
-call that *requests* a state change. `LDX #$10` (mode 8 x 2, the overworld)
-followed by `LDA #$06 / JSL $80:81E0` appears at both `$80:AF3E` and
-`$80:A820`, which looks like the request API, but `$80:81E0` has not been
-disassembled or exercised. Falsify by watchpointing writes to `$0036` across a
-normal stage exit: if the value written is `$10` and the handler at `$80:AF20`
-runs next, the model holds.
+### Tested: the state-change API, and the exit works
+
+The section above was static disassembly. This part is measured.
+
+A write-range watch on `$0036`-`$0037` across a level entry logs exactly one
+write, `$0036 = $04` at `$80:82A9`. The routine doing it, reached by the
+`JML $80:829B` that ends the level-entry flow:
+
+```
+$80:829E  A9 81         LDA #$81
+$80:82A0  48            PHA
+$80:82A1  AB            PLB              ; DB = $81
+$80:82A2  68            PLA              ; the new state, passed in by the caller
+$80:82A3  AC 72 00      LDY $0072        ; the current task
+$80:82A6  99 36 00      STA $0036,Y      ; state index x 2
+$80:82A9  EB            XBA
+$80:82AA  99 37 00      STA $0037,Y
+$80:82AD  A9 08         LDA #$08
+$80:82AF  99 30 00      STA $0030,Y      ; task status
+$80:82B2  C2 30         REP #$30
+$80:82B4  B9 34 00      LDA $0034,Y      ; the task's base SP
+$80:82B7  99 32 00      STA $0032,Y      ; saved SP := base SP
+$80:82BA  AD 70 00      LDA $0070
+$80:82BD  1B            TCS
+$80:82BE  AB            PLB
+$80:82BF  28            PLP
+$80:82C0  4C 95 81      JMP $8195        ; back to the scheduler
+```
+
+So `$7E:0072` is the current task index, and the stack is **reset** from
+`$0034,Y` rather than restored — the property that makes a state change from
+arbitrary code safe. That is now observed, not inferred.
+
+**Correction.** The observed level-entry state is `$04`, which selects table
+entry `$82C7` -> `$80:B702`, index **2**. The earlier labelling of index 3
+(`$80:BE9E`) as "the level load" was wrong: `$80:BE9E` does read `$BD:9FF6`
+via `$8D`, so it is part of the load, but it is not what a level entry
+dispatches to.
+
+**The exit to the overworld works.** From in-level, poking task 0's state and
+status the way `$80:829B` does:
+
+```sh
+--poke '400:0x36=0x10,400:0x37=0x00,400:0x30=0x08'
+```
+
+`$8D` goes from `$02` to `$BC` within 30 frames and the overworld renders
+coherently — Firebrand on the pedestal, world map, correct palette. The pad is
+still read afterwards (`$90 = $0100` while Right is held).
+
+**Not established, and the next thing to check:** whether the resulting
+overworld is fully *interactive*. Holding Right for 200 frames did not visibly
+move Firebrand, and a later `Y` press did not enter a stage. Neither is
+conclusive — the `Y` press may simply not have been over an entrance, and the
+control run from a legitimate overworld state also leaves him on a platform, so
+there is no clean movement baseline. Settling it needs **the overworld position
+variable**, which is not yet known: `$1031`/`$1034` are level coordinates and
+do not change here. Until that is found, "the exit reaches the overworld" is
+proven and "the exit leaves a usable overworld" is not.
+
+`LDX #$10 / LDA #$06 / JSL $80:81E0` at `$80:AF3E` and `$80:A820` remains
+undisassembled; it is no longer on the critical path, since `$80:829B` is the
+confirmed request API.
 
 ### Next capture
 
