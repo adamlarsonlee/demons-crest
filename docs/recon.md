@@ -1249,6 +1249,76 @@ all. Death already restores HP and respawns in-area without a mode change, and
 behaviours directly would give the same two options with less machinery than
 reproducing the menu.
 
+### Killing Firebrand outright: `$80:E602`
+
+Watching writes to `$1062` across a scripted death gives four writes and no
+noise:
+
+| PC | Value | What |
+|----|-------|------|
+| `$85:B09D` | `$14` | level load, `LDA $1E50 / STA $1062` |
+| `$80:E57D` | `0000` | 16-bit clear of `$1061`/`$1062` |
+| `$80:E606` | `$00` | **the death write** |
+| `$84:8524` | `$14` | respawn restores max HP |
+
+The damage check and the death entry, with `D=$1000` during gameplay:
+
+```
+$80:E5C4  C2 30      REP #$30
+$80:E5C6  A5 61      LDA $61        ; 16-bit read of $1061/$1062
+$80:E5C8  F0 38      BEQ $80:E602   ; zero     -> death
+$80:E5CA  30 36      BMI $80:E602   ; negative -> death
+...
+$80:E600  80 29      BRA $80:E62B   ; the survive path jumps over the death code
+$80:E602  E2 30      SEP #$30       ; <-- DEATH ENTRY
+$80:E604  64 62      STZ $62        ; $1062 = 0
+$80:E606  64 61      STZ $61        ; $1061 = 0
+$80:E608  A9 08      LDA #$08
+$80:E60A  20 76 BD   JSR $BD76
+$80:E60D  A9 FF      LDA #$FF
+$80:E60F  85 3C      STA $3C
+$80:E611  A9 10      LDA #$10
+$80:E613  85 05      STA $05
+$80:E615  64 06      STZ $06
+$80:E617  A9 2D      LDA #$2D
+$80:E619  8D E7 00   STA $00E7
+$80:E61C  A5 04      LDA $04
+$80:E61E  29 04      AND #$04
+$80:E620  F0 09      BEQ $80:E62B
+$80:E626  A9 24      LDA #$24
+$80:E628  4C D3 EF   JMP $EFD3
+$80:E62B  A9 12      LDA #$12
+$80:E62D  4C D3 EF   JMP $EFD3
+```
+
+Only two things reach `$E602`, both from the damage handler, so death is
+**never polled** — which is exactly why poking `$1062` to zero did nothing.
+
+**HP is 16-bit at `$1061`.** The check reads `$1061` as a word, so `$1062` holds
+HP units and `$1061` a sub-unit below them. `memory-map/README.md` listed only
+`$1062` as a single byte; that is the units half.
+
+**To kill outright: `JMP $80:E602`.** Constraints, from the code above:
+
+- It needs `D = $1000`, which holds during gameplay but **not** in NMI, so the
+  hotkey cannot jump there from the NMI hook. It has to be entered from a hook
+  inside the level's player-update path.
+- It is **not a subroutine.** It never returns; both exits are `JMP $EFD3`. So
+  it must be tail-jumped to, replacing the rest of that frame's update rather
+  than being called and returned from. That suits a hook well, and means no
+  stack unwinding is needed.
+- It is reached only by two relative branches, so nothing else in the ROM jumps
+  to it long — a hook in another bank needs `JML $80E602`.
+
+**Untested.** Everything above is disassembly plus the watchpoint that found
+`$80:E606`; no code has jumped to `$E602` yet. Falsify with a minimal asar patch
+that hooks a player-update site, tests the hotkey and jumps there: if Firebrand
+dies and the three-option menu appears, it holds.
+
+This also answers the menu question without needing the menu's own flag. Death
+raises the genuine menu, so an outright kill gives both "try again" and
+"reselect the stage" with no reconstruction of the UI.
+
 ### Next capture
 
 The highest-value remaining dump is **forest section 3 with the canopy

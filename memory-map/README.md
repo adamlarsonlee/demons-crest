@@ -15,7 +15,8 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000098 |2|Binary|Controller 2 held, previous frame|
 |00009A |2|Binary|Controller 2 newly pressed|
 |001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
-|001062 |1|Unsigned|Current HP
+|001061 |1|Unsigned|Current HP, sub-unit|The damage check at `$80:E5C6` reads `$1061` as a 16-bit word, so HP is `$1062` units plus this below them
+|001062 |1|Unsigned|Current HP (units)|Set from `$1E50` on level load at `$85:B09D` and on respawn at `$84:8524`
 |001031 |2|Unsigned|Horizontal Position (Coarse)
 |001034 |2|Unsigned|Vertical Position (Coarse)
 |001063 |2|Unsigned|Zam
