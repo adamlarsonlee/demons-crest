@@ -14,7 +14,7 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | open | `$7E:1D82` retracted — not area-discriminating across seven dumps; see "Seven named-area WRAM dumps" |
+| 2 | `current_level` | **found** | `$7E:008D` is the area ID **x 2**; see "`$7E:008D` is the area ID" |
 | 3 | Level-load entry | partial | Per-mode setups and loops found; the area-specific load path is not |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
@@ -401,7 +401,7 @@ retried:
 
 | Address / site | What it actually is |
 |----------------|---------------------|
-| `$7E:008D` | screen/mode type: `$BC` overworld, `02` in level |
+| ~~`$7E:008D`~~ | **This entry was wrong and is retracted.** `$8D` is the area ID x 2. The `02` seen "in level" was area 1 (S1_1) x 2; `$BC` on the overworld is not an area. See "`$7E:008D` is the area ID" |
 | `$7E:0088`, `$7E:0089` | sound command queue indices (`AND #$3E`, 32 entries) |
 | `$7E:0920`-`$095F` | the sound command ring buffer itself; `$092C` is slot 6 |
 | `$7E:0073` | frame counter, incremented in the overworld loop |
@@ -628,6 +628,13 @@ correlation. The table mapping area -> palette id has **not** been found: no
 
 ### Negative results from the dumps
 
+> **Retracted 2026-09-17.** The headline claim below — that the dumps do not
+> contain the area index — is **wrong**. `$7E:008D` carries it in all seven, as
+> area x 2. The individual bullets remain accurate as written: the index is not
+> present *raw*, which is why searching for the raw value found nothing. The
+> error was concluding "not retained" from "not retained in the one encoding I
+> tested". See "`$7E:008D` is the area ID".
+
 The dumps do **not** contain the area or layout index. Specifically:
 
 - No WRAM byte holds `(1, 2, 3, ., ., 4)` — the indices `docs/areas.md` predicts
@@ -637,11 +644,10 @@ The dumps do **not** contain the area or layout index. Specifically:
 - Neither the palette id nor the 16-bit palette base is retained anywhere in
   WRAM, in any dump.
 
-Taken together with `$84:9C60` writing `$1D82,X` from `$0000` — and poking
-`$1D82` after the load having no effect — the picture is that **the area index
-is consumed during the load and not kept in WRAM afterwards.** That is the
-reason targets 2 and 3 have resisted, and it means no quantity of area dumps
-will settle them on their own. A write-watchpoint during the load is required.
+~~Taken together with `$84:9C60` writing `$1D82,X` from `$0000` — and poking
+`$1D82` after the load having no effect — the picture is that the area index is
+consumed during the load and not kept in WRAM afterwards.~~ **Retracted:** it is
+kept, at `$8D`, doubled.
 
 ### Closed leads from this batch
 
@@ -651,6 +657,149 @@ will settle them on their own. A write-watchpoint during the load is required.
 | `$7E:1D82`-`$1D86` | a per-mode record, identical across five distinct areas |
 | `$7E:2200`-`$31FF` | object/sprite arrays; dense even-address entries whose small values track enemy type per area. Every "6 distinct small values" hit in this range is one of these |
 | `$7F:A000`-`$A1FF` | second copy of the `$0300` CGRAM shadow |
+
+### Derived encodings tested, all negative
+
+The negative result above was initially only tested against the **raw**
+`areas.md` index. Two derived encodings were then tested, in case the area is
+retained in a transformed form:
+
+- **The graphics-list pointer.** `$81:C0EE` is confirmed area-indexed, and its
+  entries validate against recon independently — entry 2 is `$C144`, entry 7 is
+  `$C18E`. No WRAM word holds its area's entry: zero addresses carry a C0EE
+  table entry in all six level dumps.
+- **A table offset (`index x 2`).** ~~Every hit is already-closed noise —
+  `$7E:008D`, or the `$2200`-`$31FF` object arrays.~~ **Retracted, and this was
+  the whole mistake: `$7E:008D` was the answer.** It was discarded solely
+  because the closed-leads table said `$8D` was a mode byte — an entry itself
+  written from two samples. A closed lead is only as good as the evidence that
+  closed it, and a two-sample closure can be as wrong as a two-sample finding.
+
+So the area is not retained raw, and not as the pointer the index was used to
+fetch. It **is** retained as a doubled offset, at `$8D`.
+
+### Hypothesis: what persists is the overworld position — WITHDRAWN
+
+> **Withdrawn 2026-09-17, unnecessary.** It was built to explain negative
+> results that turned out to be an artifact of testing one encoding. `$8D`
+> holds the area, so nothing needs re-deriving. Kept only to record that the
+> reasoning was sound and the premise was not.
+
+The game must be able to re-derive the area — after a death, and to know where
+the player is on the overworld. Nothing in WRAM holds the index, so the
+**unverified hypothesis** is that the persistent value is the overworld map
+position, with the area index computed from it through a table at load time.
+
+That would explain all four negative results at once, and it means the quantity
+to hunt is a coordinate pair, not a small integer.
+
+Falsify with two overworld dumps taken at different map positions: they should
+differ in a small, stable pair of values which also appear, unchanged, in the
+in-level dumps for the areas those positions lead to. If no such pair exists,
+or if it does not survive into the in-level dumps, the hypothesis falls.
+
+Note also that the in-game pause (the crest/vellum screen) switches mode
+*without* unloading the level, so whatever the pause handler needs in order to
+restore it is live in a paused dump. That is a separate and cheaper probe at
+the same question.
+
+### `$7E:008D` is the area ID (target 2 closed)
+
+`$7E:008D` holds the area index **multiplied by two** — the pre-doubled offset
+the area tables are indexed with. Target 2 is closed.
+
+The lead came from **FredYeye**, author of `Demon-s-Crest-Rando`, who pointed
+at his own disassembly (`FredYeye/various-game-disassembly`,
+`SNES/demons_crest.asm`) where it is simply declared:
+
+```
+!area = $8D
+```
+
+Three independent confirmations, none of them cross-sample correlation:
+
+1. **Fred's disassembly declares it.** Authoritative, and it targets USA — but
+   WRAM is shared between regions (lesson 6), so it transfers directly.
+2. **The seven dumps agree.** All six in-level values are even, and all six
+   halve into valid named slots from `docs/areas.md`. `town` halves to 4, which
+   is `S2 Town` — the one area whose index was known independently, from the
+   capture's own name.
+3. **The JP code halves it.** `$80:BE96` is `LDA $8D / LSR A / TAX /
+   LDA $9ECF,X`, and `$80:BEAC` is `LDX $8D / REP #$30 / LDY $9FF6,X`. A byte
+   table gets the value shifted right; a word table gets it as-is. That is only
+   consistent with the stored value being doubled.
+
+| Dump | `$8D` | area | `docs/areas.md` |
+|------|-------|------|-----------------|
+| `town` | `$08` | 4 | S2 Town |
+| `forest` | `$14` | 10 | S3_1 |
+| `forest-2` | `$18` | 12 | S3_2a |
+| `forest-3-no-canopy` | `$64` | 50 | S3_3a3 |
+| `water` | `$30` | 24 | S5_1 |
+| `ice` | `$3A` | 29 | S6_1 |
+| `overworld` | `$BC` | 94 | not a slot — `$BC` is a mode marker here |
+
+Two corrections to earlier assumptions fall out of this. The "forest" dumps are
+**Stage 3**, not Stage 1 — which is why the prediction that three consecutive
+sections would hold consecutive indices failed: the route runs S3_1 -> S3_2a ->
+S3_3a3, i.e. 10, 12, 50, because the `a`/`b` path variants occupy separate
+slots. And `$8D` reading `02` "in level" in the original closed-leads entry was
+area 1 (`S1_1`) x 2, not a mode constant.
+
+### JP counterparts of Fred's USA tables
+
+Found by searching the JP ROM for the instruction bytes that reference `$8D`
+(`A6 8D` = `LDX $8D`, `A5 8D` = `LDA $8D`) — lesson 6's crossing trick, which
+worked first time. `$80:BE9E` is Fred's `_80BEBA` byte-for-byte, 0x1C earlier:
+
+```
+$80:BE9E  A9 BD      LDA #$BD
+$80:BEA0  48         PHA
+$80:BEA1  AB         PLB            ; DB = $BD
+$80:BEA2  A2 00      LDX #$00
+$80:BEA4  9E 5E 0E   STZ $0E5E,X    ; zero $0E5E-$0E8F, $32 bytes
+$80:BEA7  E8         INX
+$80:BEA8  E0 32      CPX #$32
+$80:BEAA  90 F8      BCC $BEA4
+$80:BEAC  A6 8D      LDX $8D        ; area x 2
+$80:BEAE  C2 30      REP #$30
+$80:BEB0  BC F6 9F   LDY $9FF6,X    ; -> $BD:9FF6
+```
+
+| JP | USA (Fred's label) | Read at |
+|----|--------------------|---------|
+| `$BD:9FF6` | `_BDA04A` — level layout / metatile references | `$80:BEB0`, `X = $8D` |
+| `$BD:9ECF` | — | `$80:BE9A`, `X = $8D >> 1` |
+| `$BD:98FF` | — | `$80:BEE2`+4, `X = $8D` |
+| `$BD:AD66` | — | `$80:BEF3`+, `X = $8D >> 1` |
+
+`$BD:9FF6` is confirmed a **116-entry area-indexed pointer table**: its first
+pointer is `$A0DE`, and `$9FF6 + 232 = $A0DE` exactly — the same signature the
+other 116-entry tables in this ROM carry (see `docs/areas.md`).
+
+**Not yet established:** whether `$BD:9FF6` is the layout selector proper. It
+has only 41 distinct entries across 116 slots, and areas 10 and 12 (`forest`,
+`forest-2`) share pointer `$BD:A116` — the same two that share a palette. So it
+may be a per-stage or per-tileset record rather than per-section geometry.
+Fred's label is a comment in a partial disassembly, not a proven claim. Falsify
+by reading the data at `$BD:A116` and `$BD:A0ED` and checking whether it is
+section geometry or a descriptor pointing to it.
+
+### Palette id by real area index
+
+With `$8D` decoded, the palette ids from the CGRAM finding map to actual areas:
+
+| Area | Name | Palette id |
+|------|------|-----------|
+| 4 | S2 Town | 0 |
+| 10 | S3_1 | 2 |
+| 12 | S3_2a | 2 |
+| 50 | S3_3a3 | 5 |
+| 24 | S5_1 | 12 |
+| 29 | S6_1 | 11 |
+
+Two Stage 3 sections sharing palette 2 is consistent, and `$BD:9FF6` pairs them
+too.
 
 ### Next capture
 

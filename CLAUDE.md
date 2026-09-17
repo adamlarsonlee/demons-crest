@@ -38,8 +38,8 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 | # | Target | Status |
 |---|--------|--------|
 | 1 | Progress-state region | **done** — `$7E:1E50`-`$1E57`, mapped bit-for-bit |
-| 2 | Area / level index | **open** — `$7E:1D82` retracted; seven area dumps show the index is not retained in WRAM at all |
-| 3 | Level-load entry | **partial** — graphics path traced end to end; layout path unfound |
+| 2 | Area / level index | **done** — `$7E:008D` is the area ID **x 2**; confirmed three ways |
+| 3 | Level-load entry | **partial** — graphics path traced; `$80:BE9E` loads from `$BD:9FF6` indexed by `$8D`, role unconfirmed |
 | 4 | Controller RAM | open |
 | 5 | Per-frame hook | **done** — NMI `$FFA4` -> `$80:8329`; code injection proven transparent |
 | 6 | RNG | open |
@@ -101,7 +101,17 @@ These are all mistakes already made here. Each cost real time.
    far better than statistical diffing.
 7. **Search name variants for prior art.** `FredYeye/Demon-s-Crest-Rando` never
    matched a query for "demons crest" and turned out to hold the authoritative
-   area table.
+   area table. Better still: **ask the author.** One message from FredYeye
+   closed target 2 after this repo had spent four retractions on it.
+8. **A closed lead can be wrong too.** `$8D` was listed under closed leads as a
+   "screen/mode type" on two samples. It is the area ID. A later search for
+   `index x 2` hit `$8D` and the hit was discarded *because* the closed-leads
+   table said so. Closures deserve the same scrutiny as findings — record what
+   evidence closed a lead, and re-open it when a hit contradicts it.
+9. **Test more than one encoding before concluding "absent".** "The area index
+   is not in WRAM" was concluded from searching for the raw value. It was there
+   all along, doubled. An absence claim is only as wide as the encodings tested,
+   so state which ones those were.
 
 ## Hooks
 
@@ -128,10 +138,11 @@ known destinations**: only two areas are reachable dependably here
 castle), and overworld navigation does not work as a way to reach a third —
 flying right for 250/350/450/550 frames and pressing Y all enter the same place.
 
-The single most useful thing to bring back is a **raw WRAM dump per named
-area** — Town, the Colosseum, a specific forest section. With four or five known
-areas the layout index can be read off a table instead of inferred from two data
-points. Drop them in `states/` (gitignored) and record which area each one is.
+Seven named-area dumps now exist in `states/wram/`, and they did their job:
+combined with Fred's disassembly they closed target 2. **Any dump now
+self-identifies its area** — read `$8D` and halve it — so future dumps no
+longer need careful labelling, only variety. Drop them in `states/`
+(gitignored); `states/wram/MANIFEST.md` records what is there.
 
 Dumps, not save states. A dump is just bytes, so it works from any emulator; in
 Mesen it is Debug -> Memory Tools -> Work RAM -> export. Save states are
@@ -144,9 +155,10 @@ ROM is what located the area-specific tilesets.
 Either must be made against the unmodified JP ROM,
 `sha1 a6dc126a1da593d900b33eb74cf33403075e9525` (headerless).
 
-A write-breakpoint on whatever writes a small area-like value during a level
-load would finish target 2 outright, but the dumps are the safer bet: they only
-require visiting places, not finding anything.
+Target 2 is closed, so the write-breakpoint that would have finished it is no
+longer needed. What remains open and needs a debugger is targets 3, 4 and 6 —
+and for 3, the cheapest next step is static: read the data behind
+`$BD:9FF6`'s pointers and settle whether that table is the layout selector.
 
 ## Documentation
 
@@ -165,6 +177,12 @@ knowing what it is, and half of `docs/recon.md`'s value is the closed-leads list
 - `Myriachan/RockmanXPractice` — the architectural model (bass, USA Rockman X)
 - `FredYeye/Demon-s-Crest-Rando` — authoritative area table, progress bit
   mapping, USA code landmarks. Targets the **USA** ROM.
+- `FredYeye/various-game-disassembly`, `SNES/demons_crest.asm` — the same
+  author's partial disassembly, and the best source in the project. It declares
+  `!area = $8D`, which closed target 2, and labels the area-indexed tables
+  (`_BDA04A` layout, `_BD9953` tilesets, `_BD9C7D` area config). USA addresses;
+  cross to JP with the lesson-6 byte trick. Its comments are working notes, not
+  proven claims — verify before relying on a label.
 - `abyssonym/demons_crest_hacking` — level data *structure*. Its addresses are
   **USA file offsets**, confirmed; treat as a guide to format, not to addresses.
 
