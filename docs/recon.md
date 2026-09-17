@@ -1300,9 +1300,14 @@ HP units and `$1061` a sub-unit below them. `memory-map/README.md` listed only
 
 **To kill outright: `JMP $80:E602`.** Constraints, from the code above:
 
-- It needs `D = $1000`, which holds during gameplay but **not** in NMI, so the
-  hotkey cannot jump there from the NMI hook. It has to be entered from a hook
-  inside the level's player-update path.
+- It must be entered from **task context**, not from NMI. The original reason
+  given here was that `D = $1000` does not hold in NMI; that was wrong, since a
+  hook can set `D` itself with `LDA #$1000 / TCD`. The real blocker is that
+  `$80:E602` never returns, while NMI must end in `RTI`: jumping into
+  non-returning task code from an interrupt abandons the NMI frame on the stack
+  and leaves `$4200`/interrupt state wrong. `$80:BB3C` has the same constraint,
+  since it tails into `$80:829B`, which hands control back to the scheduler
+  through `$0070`. Both hotkey actions therefore need a task-context hook.
 - It is **not a subroutine.** It never returns; both exits are `JMP $EFD3`. So
   it must be tail-jumped to, replacing the rest of that frame's update rather
   than being called and returned from. That suits a hook well, and means no
@@ -1318,6 +1323,60 @@ dies and the three-option menu appears, it holds.
 This also answers the menu question without needing the menu's own flag. Death
 raises the genuine menu, so an outright kill gives both "try again" and
 "reselect the stage" with no reconstruction of the UI.
+
+### Death is not triggerable by a data write
+
+**Falsified.** The damage check reads `$1061` as a 16-bit word, so the earlier
+test that poked only `$1062` left the word non-zero. Zeroing **both** bytes and
+waiting 430 frames still produces no death:
+
+| Frame | `$1061` | `$1062` | word | outcome |
+|-------|---------|---------|------|---------|
+| 399 | 0 | 20 | 5120 | alive (pre-poke) |
+| 450 | 0 | 0 | 0 | alive |
+| 880 | 0 | 0 | 0 | alive, HP never restored |
+
+So `$80:E5C4` runs only inside the damage handler and is never polled. `$1061`
+is normally zero anyway, so the 16-bit framing is right but the sub-unit is
+rarely populated.
+
+The consequence matters for the design: **death cannot be caused by writing
+RAM.** It requires a control transfer to `$80:E602`, which in turn requires a
+task-context hook — a data write from the NMI hook would have been enough, and
+is not.
+
+### Every mode's main loop
+
+Found by searching for `JSL $80821E` (the shared frame sync) followed by a
+backward branch. 84 call sites in total, 44 of which form a loop. The ones in
+bank `$80`:
+
+```
+$80:870E -> $86C7    $80:873B -> $872F    $80:878E -> $8771
+$80:87C1 -> $87B3    $80:88D5 -> $88C4    $80:88EE -> $88E0
+$80:88FB -> $888C    $80:A801 -> $A7FF    $80:A846 -> $A844
+$80:A879 -> $A82D    $80:AF6A -> $AF68    $80:AFF9 -> $AFDC  (the overworld)
+$80:B748 -> $B746    $80:B79B -> $B799    $80:B7ED -> $B7EB
+$80:B94F -> $B904    $80:B997 -> $B989    $80:B9B1 -> $B9A5
+$80:B9C5 -> $B9B7    $80:B9DA -> $B9CE    $80:B9EC -> $B9E0
+$80:B9FE -> $B9F2    $80:C500 -> $C4E5    $80:C865 -> $C844
+$80:CAD7 -> $CA7D    $80:CD26 -> $CCD2
+```
+
+Plus sites in banks `$84` and `$BE`. Short spans of 10-20 bytes are fade and
+wait loops; the longer ones are candidates for mode loops.
+
+**Still open: the level's gameplay loop.** The level mode handler is `$80:B702`
+(dispatch state `$04`), and its setup runs at least to `$80:B824`, containing
+three short wait loops (`$80:B746`, `$80:B799`, `$80:B7EB`) that are fades, not
+gameplay. No frame-sync-plus-backward-branch exists between `$80:B7ED` and
+`$80:B904`, so the mode hands off rather than looping in place, and the
+gameplay loop has not been located.
+
+**Lead for finding it cheaply:** a write watch during level gameplay already
+showed `$80:9536` and `$80:953F` writing `$0016` every frame. Those are inside
+the per-frame path, so walking their caller chain should reach the loop — no
+new measurement needed, just a static trace back from a PC already observed.
 
 ### Next capture
 
