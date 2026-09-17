@@ -50,7 +50,9 @@ area/section index space is known by name (`docs/areas.md`).
 
 No practice *features* are written yet, but `src/asm/experiments/` now holds a
 working exit-to-overworld hotkey (`exit_probe.asm`) and a failed death jump
-(`death_probe.asm`), both hooking the level gameplay loop at `$80:B8F5`.
+(`death_probe.asm`), both hooking the level gameplay loop at `$80:B8F5`. The
+full practice loop — level, hotkey, overworld, fly, `Y`, level — is verified
+end to end with `exit_probe.asm`.
 
 ## How to work here
 

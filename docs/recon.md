@@ -1517,6 +1517,27 @@ frames moves him visibly across the map, from the inland pedestal out to the
 coastline. So the exit half of the practice loop works on the game's own code
 path, in about twelve instructions.
 
+**The round trip closes.** Exit by hotkey at frame 400, hold Right 500-700,
+then press `Y`: `$8D` returns to `$02` by frame 900 and the frame at 1180 is
+ordinary gameplay in area 1, full HP bar, enemies live.
+
+| Frame | `$8D` | |
+|-------|-------|---|
+| 710 | `$BC` | overworld, after the hotkey exit |
+| 900 | `$02` | back in area 1 |
+| 1180 | `$02` | still playing |
+
+So level -> hotkey -> overworld -> fly -> `Y` -> level all works, which is the
+practice loop the design asks for.
+
+Two limits on that result. `Y` pressed **on the pedestal itself does nothing**;
+Firebrand has to be flown to an entrance first, which matches the design's
+"fly around and choose it" rather than contradicting it. And this re-entered
+the *same* area, consistent with the older note that flying right for
+250/350/450/550 frames and pressing `Y` all enter the same place — choosing a
+*different* stage by flying is still not demonstrated in the harness, though
+that is an overworld-navigation question and not a defect in the exit.
+
 #### What this says about the design
 
 The contrast between the two probes is the "make the game do the work"
