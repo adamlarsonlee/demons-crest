@@ -1118,7 +1118,7 @@ readable statically:
 |------|--------------|---------|
 | `$80:BB3C` | `$10` | **the overworld — this is the "exit area" routine** |
 | `$BE:F565` | `$10` | the overworld, same four-instruction shape |
-| `$84:C1FC` | `$04` or `$10` | **conditional — the death menu**, see below |
+| `$84:C1FC` | `$04` or `$10` | conditional on `$1E54` bit 0 — a **progress gate**, not the death menu |
 | `$85:B0D6` | `$04` | the level (the entry path already traced) |
 | `$82:CAF3`, `$84:8570`, `$84:EFEA`, `$85:C485`, `$BE:F4D1` | `$04` | the level |
 | `$84:814B`, `$84:C25A`, `$85:9497`, `$85:A512` | `$02` | |
@@ -1139,20 +1139,25 @@ Four instructions. This is the game's own stage exit, and replicating it is the
 right implementation for an exit hotkey — far better than poking `$0036`
 directly, which the sweep below shows is unreliable.
 
-#### `$84:C1FC` — the death menu's branch
+#### `$84:C1FC` is a progress gate, not the death menu
+
+**Retracted.** This was recorded as the death menu's branch on the strength of
+the `AND #$01` shape, without reading the operand. It reads `$1E54`:
 
 ```
-   29 01      AND #$01
-   D0 04      BNE +4
-   A9 04      LDA #$04      ; continue from the current stage
-   80 02      BRA +2
-   A9 10      LDA #$10      ; return to the overworld map
-   5C 9B 82 80
+$84:C1EF  AD 54 1E      LDA $1E54     ; Max-HP+ bits; bit 0 is the Somulo pickup
+$84:C1F2  29 01         AND #$01
+$84:C1F4  D0 04         BNE $84:C1FA
+$84:C1F6  A9 04         LDA #$04      ; -> the level
+$84:C1F8  80 02         BRA $84:C1FC
+$84:C1FA  A9 10         LDA #$10      ; -> the overworld
+$84:C1FC  5C 9B 82 80   JML $80829B
 ```
 
-This is the "continue / return to map / quit" menu the game shows on death,
-choosing the next state from a bit. Useful as a second, always-available exit,
-and as the model for how the practice ROM should present a choice.
+`$1E54` bit 0 is documented in `memory-map/README.md` as a progress bit, so this
+branches on progress, not on a menu selection. The region is still death- or
+respawn-related — `$84:C182` and `$84:C1BE` both write `$1062` — but the label
+was wrong. Lesson 2 applies to operands as much as to addresses.
 
 #### Poking `$0036` directly is unreliable
 
@@ -1190,6 +1195,59 @@ $1E35,X`).
 Incidental corroboration of the controller finding: the game's own menu code at
 `$85:CD4B` does `LDA $0095 / BIT #$80`, i.e. tests B in the newly-pressed word
 at `$0094`.
+
+### Death, measured
+
+Death is reachable headlessly: poke `$1062` (current HP) to **1**, not 0, then
+walk into an enemy. Poking it to 0 does nothing, because death is driven from
+the damage routine rather than an HP poll.
+
+```sh
+--poke '200:0x1062=0x01' --press "10:y,11:y,<hold right from 210>"
+```
+
+What happens, measured over 1400 frames in area 1:
+
+| Frame | HP | `$8D` | `$0036` |
+|-------|-----|-------|---------|
+| 300 | 1 | `$02` | `$04` |
+| 600 | 0 | `$02` | `$04` |
+| 900 | 20 | `$02` | `$04` |
+| 1380 | 20 | `$02` | `$04` |
+
+So a single death **respawns in the same area with HP restored** to `$1E50`
+(max HP, 20 here), and `$0036` never changes. The death flow does not go
+through the state dispatcher at all.
+
+By frame 1380 the three-option menu is on screen, drawn over the level:
+
+- もういちど ちょうせんする — try again
+- ステージを えらびなおす — reselect the stage
+- ゲームを しゅうりょうする — quit
+
+**The menu is rendered inside the level state `$04`**, which is why no state
+write is logged: the dispatch happens only after the player picks. So there is
+no mode to jump to in order to raise it.
+
+**Open: how to raise the menu without dying.** Diffing an alive frame against a
+menu frame from the same run leaves 1258 differing bytes. The candidates that
+went `0` to a small value were `$0016`, `$00E5`, `$0E51` and `$0E5B`, and a
+write watch killed the first three:
+
+| Address | What it actually is |
+|---------|---------------------|
+| `$7E:0016` | general parameter, written constantly from `$80:9536` with varying `X`/`Y` |
+| `$7E:0E51` | part of a pointer block; `$82:8B54` stores `$1D50` through it |
+
+`$00E5` and `$0E5B` are untested — the watch budget was consumed by `$0016`'s
+churn. Retry with `$0016` excluded, or watch a narrow range only in the frames
+around the menu appearing.
+
+**Worth noting for the design:** the retry behaviour may not need the menu at
+all. Death already restores HP and respawns in-area without a mode change, and
+`$80:BB3C` already exits to the overworld. Two hotkeys invoking those two
+behaviours directly would give the same two options with less machinery than
+reproducing the menu.
 
 ### Next capture
 
