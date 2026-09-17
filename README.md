@@ -92,14 +92,13 @@ export also makes the snapshot atomic, but the effect is small — tearing was
 | # | Capture | Files | What it buys |
 |---|---------|-------|--------------|
 | 1 | **Noise floor** — one area, entered twice, dumped at the same landmark both times | 2, ideally 4 (two re-entries) | The set of addresses that differ between two dumps of an *identical* area. Subtracting it from a cross-area diff is what makes the diff usable at all; without it a level load touches hundreds of variables and the candidate list is meaningless |
-| 2 | **Controller** — stand still, export while **holding** each set, unpaused: none / Right+Y / Left+B / Up+A+L+R / Select+Down+X | 5 | Closes the controller-RAM target outright. The SNES joypad bit layout is fixed (`BYsSudlr AXLR....`), so the byte pair can be matched against known masks rather than inferred. Do not pause — the pad must be live. Avoid Start, which opens the equipment screen |
-| 3 | **Layout variant** — forest section 3 with the canopy triggered | 1 | Pairs against the existing `forest-3-no-canopy`. Same area, same palette, same tileset, one differing layout, so it isolates the layout selector and localizes the layout buffer |
-| 4 | **Paused equipment screen** — one area, dumped unpaused and again on the crest/vellum screen | 2 | The pause screen switches mode without unloading the level, so whatever the handler needs to restore the level is live in the paused dump |
-| 5 | **Overworld positions** — two or three distinct map locations | 3 | `$8D` holds a mode marker (`$BC`) rather than an area on the overworld, so what selects the destination when Y is pressed is still unknown. Needed for a warp feature |
-| 6 | **Consecutive sections** of one more stage, in order | 3 | More points for the palette-id to area-index mapping, and tests whether sections of a stage share a palette as forest 1 and 2 do |
-| 7 | **Boss rooms** — Somulo's arena and one other | 2 | Unambiguous single area slots, so they anchor the index mapping |
+| 2 | **Layout variant** — forest section 3 with the canopy triggered | 1 | Pairs against the existing `forest-3-no-canopy`. Same area, same palette, same tileset, one differing layout, so it isolates the layout selector and localizes the layout buffer |
+| 3 | **Paused equipment screen** — one area, dumped unpaused and again on the crest/vellum screen | 2 | The pause screen switches mode without unloading the level, so whatever the handler needs to restore the level is live in the paused dump |
+| 4 | **Overworld positions** — two or three distinct map locations | 3 | `$8D` holds a mode marker (`$BC`) rather than an area on the overworld, so what selects the destination when Y is pressed is still unknown. Needed for a warp feature |
+| 5 | **Consecutive sections** of one more stage, in order | 3 | More points for the palette-id to area-index mapping, and tests whether sections of a stage share a palette as forest 1 and 2 do |
+| 6 | **Boss rooms** — Somulo's arena and one other | 2 | Unambiguous single area slots, so they anchor the index mapping |
 
-Stopping after #3 still unblocks the work that is currently stuck.
+Stopping after #2 still unblocks the work that is currently stuck.
 
 ### What dumps cannot settle
 

@@ -16,7 +16,7 @@ watched live and written to before being committed to assembly.
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
 | 2 | `current_level` | **found** | `$7E:008D` is the area ID **x 2**; see "`$7E:008D` is the area ID" |
 | 3 | Level-load entry | **found** | `$85:B0BA`; destination `$7E:1326` -> table `$81:E0F1` -> `$8D`. Warp verified |
-| 4 | `controller_1_new` | open | Hotkey edge detection |
+| 4 | `controller_1_new` | **found** | `$7E:0094` newly-pressed, `$7E:0090` held; the game computes the edge itself |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
 | 7 | Free ROM space | **mapped** | See "ROM space"; expansion required |
@@ -896,6 +896,96 @@ warping to a mid-stage area such as 12 (S3_2a).
 `$8D = $02` on that state's entry, so the destination is area **1**, S1_1. The
 earlier "index 2 = S1_2" reading came from `$1D82`, which is retracted. Any
 note elsewhere saying `allitems.state` enters S1_2 is wrong.
+
+### Controller RAM (target 4 closed)
+
+The NMI handler reads the pad and computes edge detection itself, so the
+practice ROM does not have to. From `$80:835D`, inside the NMI the repo already
+hooks (`$FFA4` -> `$80:8329`):
+
+```
+$80:8355  AD 12 42      LDA $4212      ; wait for auto-joypad
+$80:8358  4A            LSR A
+$80:8359  B0 FA         BCS $80:8355
+$80:835B  C2 30         REP #$30
+$80:835D  A5 90         LDA $90        ; previous <- current
+$80:835F  85 92         STA $92
+$80:8361  AD 18 42      LDA $4218      ; JOY1L
+$80:8364  AA            TAX
+$80:8365  29 0F 00      AND #$0F       ; reject non-standard pad
+$80:836A  A2 00 00      LDX #$00
+$80:836D  86 90         STX $90        ; held
+$80:836F  8A            TXA
+$80:8370  45 92         EOR $92        ; changed
+$80:8372  25 90         AND $90        ; ...and now set
+$80:8374  85 94         STA $94        ; newly pressed
+```
+
+| Address | Width | Meaning |
+|---------|-------|---------|
+| `$7E:0090` | 16 | controller 1, **held** |
+| `$7E:0092` | 16 | controller 1, previous frame |
+| `$7E:0094` | 16 | controller 1, **newly pressed** (one frame) |
+| `$7E:0096` / `$0098` / `$009A` | 16 | the same three for controller 2 |
+
+Standard SNES layout, high byte first: `B $8000`, `Y $4000`, **`Select $2000`**,
+`Start $1000`, `Up $0800`, `Down $0400`, `Left $0200`, `Right $0100`, `A $0080`,
+`X $0040`, `L $0020`, `R $0010`. The low nibble is always zero, which is what
+`AND #$000F` tests.
+
+Confirmed headlessly, not just read off the disassembly:
+
+| Frame | Input | `$90` | `$94` |
+|---|---|---|---|
+| 300 | Y pressed | `4000` | `4000` |
+| 301-302 | Y held | `4000` | `0000` |
+| 303 | released | `0000` | `0000` |
+| 310 | Start | `1000` | `1000` |
+
+The edge at `$94` fires for exactly one frame, which is what a hotkey wants.
+
+### `$85:9B39` — the progress-to-variant selector
+
+Called from the level-load entry at `$85:B09D`, immediately before the
+destination table is read, and returns a small tier value in `Y` which the
+caller compares with `CPY #$02`. This is the mechanism behind areas having
+different forms on a first visit and a revisit.
+
+```
+$85:9B39  C2 20         REP #$20
+$85:9B3B  AD 58 1E      LDA $1E58
+$85:9B3E  89 01 00      BIT #$01
+$85:9B41  D0 35         BNE $85:9B78
+$85:9B43  A0 03         LDY #$03
+$85:9B45  AD 51 1E      LDA $1E51      ; 16-bit: $1E51/$1E52
+$85:9B48  89 00 01      BIT #$0100
+$85:9B4B  D0 18         BNE $85:9B65   ; return Y = 3
+$85:9B4D  A0 00         LDY #$00
+$85:9B4F  A2 08         LDX #$08
+$85:9B51  AD 51 1E      LDA $1E51
+$85:9B54  3C 61 8D      BIT $8D61,X    ; mask table $85:8D61, stride 2
+$85:9B57  D0 08         BNE $85:9B61
+$85:9B59  AD 54 1E      LDA $1E54      ; 16-bit
+$85:9B5C  3C 6B 8D      BIT $8D6B,X    ; mask table $85:8D6B
+$85:9B5F  F0 07         BEQ $85:9B68
+$85:9B61  CA            DEX
+$85:9B62  CA            DEX
+$85:9B63  10 EC         BPL $85:9B51
+$85:9B65  E2 20         SEP #$20
+$85:9B67  6B            RTL
+```
+
+**The progress block extends past `$1E57`.** This routine reads `$1E58` bit 0,
+which is outside the eight bytes `memory-map/README.md` documents. Any state
+block intended to control area variants must cover `$1E58` as well.
+
+Inputs are therefore `$1E58` bit 0, `$1E51`/`$1E52` (bit 8 tested explicitly,
+then against `$85:8D61`) and `$1E54`/`$1E55` (against `$85:8D6B`). The two mask
+tables are nine entries each, walked `X = 8` down to `0` in steps of 2.
+
+**Not yet established:** what each tier means, and the target of the `$85:9B78`
+early-out. Read the two mask tables against the documented progress bit map to
+recover the tier definitions — static work, no emulator needed.
 
 ### Next capture
 

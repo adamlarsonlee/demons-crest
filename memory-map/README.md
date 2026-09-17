@@ -7,6 +7,14 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |Address|Bytes|Display|Maps|Notes|
 |-------|-----|-------|----|-----|
 |0000C0 |1|Unsigned|Viewport Something ?
+|00008D |1|Unsigned|Current area ID **x 2**|Halve it for the `docs/areas.md` index. Reads `$BC` on the overworld, which is a mode marker and not an area
+|000090 |2|Binary|Controller 1 held|Standard layout: B $8000, Y $4000, Select $2000, Start $1000, Up $0800, Down $0400, Left $0200, Right $0100, A $0080, X $0040, L $0020, R $0010
+|000092 |2|Binary|Controller 1 held, previous frame|
+|000094 |2|Binary|Controller 1 newly pressed|Edge computed by the game in NMI at `$80:8374`; set for exactly one frame
+|000096 |2|Binary|Controller 2 held|
+|000098 |2|Binary|Controller 2 held, previous frame|
+|00009A |2|Binary|Controller 2 newly pressed|
+|001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
 |001062 |1|Unsigned|Current HP
 |001031 |2|Unsigned|Horizontal Position (Coarse)
 |001034 |2|Unsigned|Vertical Position (Coarse)

@@ -40,7 +40,7 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 | 1 | Progress-state region | **done** — `$7E:1E50`-`$1E57`, mapped bit-for-bit |
 | 2 | Area / level index | **done** — `$7E:008D` is the area ID **x 2**; confirmed three ways |
 | 3 | Level-load entry | **partial** — `$85:B0BA`: `$7E:1326` -> `$81:E0F1` -> `$8D`. Clean warp verified, but only riding the game's own overworld trigger; warping from arbitrary state is untested |
-| 4 | Controller RAM | open |
+| 4 | Controller RAM | **done** — `$7E:0094` newly-pressed, `$7E:0090` held; Select is `$2000` |
 | 5 | Per-frame hook | **done** — NMI `$FFA4` -> `$80:8329`; code injection proven transparent |
 | 6 | RNG | open |
 | 7 | Free ROM space | **mapped** — fragmented; needs expansion |
