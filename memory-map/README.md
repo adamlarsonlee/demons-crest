@@ -45,7 +45,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E38 |1|Unsigned|Phial 4 Contents|
 |001E39 |1|Unsigned|Phial 5 Contents|
 |001E44 |1|Unsigned|Derived from progress; do not write|Stable during play but recomputed by the game on level load. Differs between saves whose $1E50-$1E57 are identical, so it depends on more than that block. A state block does not need to supply it. Exact meaning still unidentified
-|001E50 |1|Unsigned|Max HP
+|001E50 |1|Unsigned|Max HP|**= 4 + the number of HP-up bits set in `$1E54`/`$1E55`**, exact on all five documented password blocks. So a route state never needs max HP supplied; `tools/state.py` derives it
 |001E51	|1|Binary|Fire/Blazon Power (Not Ultimate)|Each bit is mapped to the next power sequence (0000 0001 is Buster, 1000 0000 is Legenday, etc.)
 |001E52	|1|Binary|Ultimate - Jar 2|Again, bits are mapped to menu selections (0000 0001 is Ultimate, 1000 0000 is jar 2)
 |001E53	|1|Binary|Jar 3 - Talismans|Same story
