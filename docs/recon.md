@@ -987,6 +987,71 @@ tables are nine entries each, walked `X = 8` down to `0` in steps of 2.
 early-out. Read the two mask tables against the documented progress bit map to
 recover the tier definitions — static work, no emulator needed.
 
+### The mode dispatcher is a cooperative task switcher
+
+All of this is **static disassembly, not yet observed running** — treat every
+address here as a hypothesis until a watchpoint confirms it.
+
+```
+$80:81C8  08            PHP
+$80:81C9  8B            PHB
+$80:81CA  C2 20         REP #$20
+$80:81CC  3B            TSC             ; save the caller's stack pointer
+$80:81CD  8D 70 00      STA $0070
+$80:81D0  B9 32 00      LDA $0032,Y     ; the target task's saved SP
+$80:81D3  1B            TCS             ; switch stacks
+$80:81D4  A9 00 00      LDA #$00
+$80:81D7  5B            TCD             ; D = 0
+$80:81D8  E2 20         SEP #$20
+$80:81DA  BE 36 00      LDX $0036,Y     ; that task's state index x 2
+$80:81DD  7C C3 82      JMP ($82C3,X)   ; dispatch
+```
+
+The yield path back out is `$80:82B7 STA $0032,Y` then `LDA $0070 / TCS / PLB /
+PLP`. So per task, indexed by `Y`:
+
+| Address | Meaning |
+|---------|---------|
+| `$7E:0032,Y` | that task's saved stack pointer |
+| `$7E:0036,Y` | that task's **state index x 2** |
+| `$7E:0070` | the switcher's scratch for the caller's SP |
+
+`$80:82C3` is a table of 16-bit pointers, each to a four-byte `JML` stub:
+
+| Index | Handler | What it is |
+|-------|---------|-----------|
+| 0 | `$80:86BE` | |
+| 1 | `$80:A7FF` | |
+| 2 | `$80:B702` | |
+| **3** | **`$80:BE9E`** | **the level load** — the `LDA #$BD`/`PLB`/`STZ $0E5E` routine that reads `$BD:9FF6` |
+| 4 | `$84:F0EA` | |
+| 5 | `$84:A0B9` | |
+| 6 | `$84:EC3D` | |
+| 7 | `$80:86BE` | |
+| **8** | **`$80:AF20`** | **the overworld** |
+| 9 | `$80:B99D` | |
+| 10 | `$80:B9CE` | |
+
+**Why this matters for the practice ROM.** A mode change resets the stack
+pointer from `$0032,Y`, so switching state from arbitrary game code does not
+require unwinding whatever the level mode had on its stack. That is what makes
+an exit-to-overworld hotkey viable on real hardware, and it is why an
+exit-and-re-enter design is safer than a direct level-to-level warp.
+
+`$8D` fits this picture too. `$80:AF36` computes it as `#$50 ASL` plus `$0000`,
+i.e. `$A0 + index`, which is why the overworld reads `$BC`. Below `$80` it is
+area x 2; `$A0` and above encodes overworld state. Named areas stop at 59
+(`$76`), so the two ranges do not collide. The original closed-leads note
+calling `$8D` a "screen/mode type" was picking up this half of its behaviour.
+
+**Unconfirmed, and the last piece before an exit hotkey can be written:** the
+call that *requests* a state change. `LDX #$10` (mode 8 x 2, the overworld)
+followed by `LDA #$06 / JSL $80:81E0` appears at both `$80:AF3E` and
+`$80:A820`, which looks like the request API, but `$80:81E0` has not been
+disassembled or exercised. Falsify by watchpointing writes to `$0036` across a
+normal stage exit: if the value written is `$10` and the handler at `$80:AF20`
+runs next, the model holds.
+
 ### Next capture
 
 The highest-value remaining dump is **forest section 3 with the canopy
