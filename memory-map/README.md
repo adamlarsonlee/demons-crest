@@ -6,7 +6,12 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 
 |Address|Bytes|Display|Maps|Notes|
 |-------|-----|-------|----|-----|
-|0000C0 |1|Unsigned|Viewport Something ?
+|000030 |1|Unsigned|Task status|Set to `$08` by the state-change routine `$80:829B`. Indexed as `$0030,Y` with `Y` from `$0072`
+|000032 |2|Unsigned|Task saved stack pointer|`$0032,Y`. The scheduler loads it and does `TCS` at `$80:81D0`
+|000034 |2|Unsigned|Task base stack pointer|`$0034,Y`. `$80:82B4` copies it into `$0032,Y` on a state change, so a mode switch **resets** the stack rather than restoring it. This is what makes a state change from arbitrary code safe
+|000036 |2|Unsigned|Task state index x 2|`$0036,Y`. Indexes the dispatch table at `$80:82C3`; `$04` is the level, `$10` the overworld. Writing it directly is unreliable - see `docs/recon.md`
+|000070 |2|Unsigned|Scheduler scratch, caller stack pointer|Saved with `TSC` at `$80:81CC`, restored at `$80:82BA`
+|000072 |1|Unsigned|Current task index|The `Y` used for every `$0030`-`$0036` task field
 |00008D |1|Unsigned|Current area ID **x 2**|Halve it for the `docs/areas.md` index. Reads `$BC` on the overworld, which is a mode marker and not an area
 |000090 |2|Binary|Controller 1 held|Standard layout: B $8000, Y $4000, Select $2000, Start $1000, Up $0800, Down $0400, Left $0200, Right $0100, A $0080, X $0040, L $0020, R $0010
 |000092 |2|Binary|Controller 1 held, previous frame|
@@ -14,12 +19,17 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000096 |2|Binary|Controller 2 held|
 |000098 |2|Binary|Controller 2 held, previous frame|
 |00009A |2|Binary|Controller 2 newly pressed|
-|001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
-|001061 |1|Unsigned|Current HP, sub-unit|The damage check at `$80:E5C6` reads `$1061` as a 16-bit word, so HP is `$1062` units plus this below them
-|001062 |1|Unsigned|Current HP (units)|Set from `$1E50` on level load at `$85:B09D` and on respawn at `$84:8524`
+|0000C0 |1|Unsigned|Viewport Something ?
+|000300 |512|-|CGRAM shadow|256 colours, loaded verbatim from ROM bank `$99` at `$99:AB40 + id x $C0`. `$7F:A000` holds a second copy
+|000E56 |1|Unsigned|Current area ID x 2, second copy|Written alongside `$8D` at `$85:B0C2`
+|000EA7 |1|Unsigned|Per-area value from `$81:E182`|Written at `$85:B0C8` on level entry; meaning unidentified
 |001031 |2|Unsigned|Horizontal Position (Coarse)
 |001034 |2|Unsigned|Vertical Position (Coarse)
+|001054 |Unsure|Binary?|Selected form|0 is Firebrand and the first bit is crazy (I dare you to set it to 1), but not I'm not sure exactly how this works yet and there are more addresses required to load in graphics
+|001061 |1|Unsigned|Current HP, sub-unit|The damage check at `$80:E5C6` reads `$1061` as a 16-bit word, so HP is `$1062` units plus this below them
+|001062 |1|Unsigned|Current HP (units)|Set from `$1E50` on level load at `$85:B09D` and on respawn at `$84:8524`
 |001063 |2|Unsigned|Zam
+|001326 |2|Unsigned|Overworld destination index|Read as `$26` with `D=$1300` at `$85:B0BA`, indexing `$81:E0F1` to produce `$8D`. Direct-page scratch reused after the load, so only meaningful during the entry itself
 |001E30 |1|Unsigned|Scroll 1 Contents|
 |001E31 |1|Unsigned|Scroll 2 Contents|
 |001E32 |1|Unsigned|Scroll 3 Contents|
@@ -30,6 +40,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E37 |1|Unsigned|Phial 3 Contents|
 |001E38 |1|Unsigned|Phial 4 Contents|
 |001E39 |1|Unsigned|Phial 5 Contents|
+|001E44 |1|Unsigned|Derived from progress; do not write|Stable during play but recomputed by the game on level load. Differs between saves whose $1E50-$1E57 are identical, so it depends on more than that block. A state block does not need to supply it. Exact meaning still unidentified
 |001E50 |1|Unsigned|Max HP
 |001E51	|1|Binary|Fire/Blazon Power (Not Ultimate)|Each bit is mapped to the next power sequence (0000 0001 is Buster, 1000 0000 is Legenday, etc.)
 |001E52	|1|Binary|Ultimate - Jar 2|Again, bits are mapped to menu selections (0000 0001 is Ultimate, 1000 0000 is jar 2)
@@ -37,8 +48,8 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E54	|2|Binary|Max HP+|Each bit is mapped to a specific max health increase pickup, not sure yet which bits map to which drop but 0000 0000 0000 0001 is Somulo, obviously
 |001E56	|1|Binary|Progress flags (boss/stage)|Not previously mapped. Found by diffing password-loaded saves; goes 81 -> FF as the game is completed
 |001E57	|1|Binary|Progress flags, continued|Only the low two bits are used
-|001E44 |1|Unsigned|Derived from progress; do not write|Stable during play but recomputed by the game on level load. Differs between saves whose $1E50-$1E57 are identical, so it depends on more than that block. A state block does not need to supply it. Exact meaning still unidentified
-|001054 |Unsure|Binary?|Selected form|0 is Firebrand and the first bit is crazy (I dare you to set it to 1), but not I'm not sure exactly how this works yet and there are more addresses required to load in graphics
+|001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
+|01A000 |512|-|CGRAM shadow, second copy|Mirrors `$0300`-`$04FF`; why `$0431` and `$1A131` always agree
 
 
 # Progress Block Bit Mapping
@@ -125,8 +136,10 @@ strict superset chain, so their bit counts are not strictly ordered.
 This block being contiguous is what makes hardcoded state blocks viable for the
 practice ROM, in the same way RockmanXPractice uses one 48-byte region.
 
-Data from `$1E58` to roughly `$1E70` also varies between saves but has not been
-identified, and may be incidental rather than progress.
+Data from `$1E58` to roughly `$1E70` also varies between saves. `$1E58` bit 0 is
+now known to be read by the area-variant selector `$85:9B39`, so at least the
+first byte is real progress state and a state block must cover it. `$1E59`
+onward is still unidentified.
 
 Writing this block is sufficient on its own. Poking the eight bytes from an
 all-items save into a level-2 save produces an in-level item menu that is
