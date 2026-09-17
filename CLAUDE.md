@@ -39,7 +39,7 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 |---|--------|--------|
 | 1 | Progress-state region | **done** — `$7E:1E50`-`$1E57`, mapped bit-for-bit |
 | 2 | Area / level index | **done** — `$7E:008D` is the area ID **x 2**; confirmed three ways |
-| 3 | Level-load entry | **partial** — `$85:B0BA`: `$7E:1326` -> `$81:E0F1` -> `$8D`. Clean warp verified, but only riding the game's own overworld trigger; warping from arbitrary state is untested |
+| 3 | Level-load entry | **done** — `$85:B0BA`: `$7E:1326` -> `$81:E0F1` -> `$8D`. Exit via `$80:BB30` verified from a hotkey in the level loop |
 | 4 | Controller RAM | **done** — `$7E:0094` newly-pressed, `$7E:0090` held; Select is `$2000` |
 | 5 | Per-frame hook | **done** — NMI `$FFA4` -> `$80:8329`; code injection proven transparent |
 | 6 | RNG | open |
@@ -48,8 +48,9 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 Also established: the password system is fully mapped and scriptable, and the
 area/section index space is known by name (`docs/areas.md`).
 
-Nothing of the practice ROM itself is written yet. `src/asm/experiments/` holds
-probes, not features.
+No practice *features* are written yet, but `src/asm/experiments/` now holds a
+working exit-to-overworld hotkey (`exit_probe.asm`) and a failed death jump
+(`death_probe.asm`), both hooking the level gameplay loop at `$80:B8F5`.
 
 ## How to work here
 
@@ -131,10 +132,16 @@ Applied so far:
   letting `$85:9B39` decide, not by selecting layouts ourselves.
 - Pad edge detection is already computed at `$7E:0094`; do not recompute it.
 
-The corollary is that recon should look for **the furthest point down a path
-where the game takes over**, because that is the smallest hook. It is also why
-addressing context matters so much: entering the game's code mid-flow means
-matching `D`, `DB` and register widths, and those are what the watchpoint logs.
+The corollary is to enter **at the start of the game's own sequence, not at the
+furthest point down it.** Measured both ways: jumping to `$80:BB30`, where two
+teardown `JSL`s run before the state change, exits a stage cleanly, while
+jumping to `$80:E602`, which sits past the player-state setup the damage
+handler does, blanks the screen. The furthest point down a path is the smallest
+hook and usually the wrong one.
+
+It is also why addressing context matters: entering the game's code mid-flow
+means matching `D`, `DB` and register widths — and matching `D` was not
+sufficient for the death entry, so context is not just the registers.
 
 ## Hooks
 

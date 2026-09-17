@@ -1125,19 +1125,24 @@ readable statically:
 | `$84:88D4` | indexed | a table at `$9B71,X` |
 | `$BE:85B5` | `$10` | via `JSL $BE:85C9` |
 
-#### `$80:BB3C` — exit to the overworld
+#### `$80:BB30` — exit to the overworld
+
+**Corrected:** an earlier version of this block was misaligned by two bytes and
+began with a non-existent `STA $84`. The real sequence is:
 
 ```
-$80:BB34  85 84         STA $84
-$80:BB36  A2 10         LDX #$10
-$80:BB38  22 12 82 80   JSL $808212
-$80:BB3C  A9 10         LDA #$10
-$80:BB3E  5C 9B 82 80   JML $80829B
+$80:BB30  22 1C 85 84   JSL $84851C     ; teardown
+$80:BB34  A2 10         LDX #$10
+$80:BB36  22 12 82 80   JSL $808212
+$80:BB3A  A9 10         LDA #$10        ; state index x 2 = the overworld
+$80:BB3C  5C 9B 82 80   JML $80829B
 ```
 
-Four instructions. This is the game's own stage exit, and replicating it is the
-right implementation for an exit hotkey — far better than poking `$0036`
-directly, which the sweep below shows is unreliable.
+`$80:829B` opens `SEP #$30 / PHA`, so the state is passed **in `A`** and the
+routine sets its own register widths. The two `JSL`s ahead of it do the
+teardown, which is why entering at `$80:BB30` works from arbitrary level code
+and jumping to the death entry does not. **Verified working** — see the probes
+below.
 
 #### `$84:C1FC` is a progress gate, not the death menu
 
@@ -1471,6 +1476,59 @@ whatever player-update state it inherits — and everything after it (animation,
 HP restore from `$1E50`, the three-option menu, the state dispatch) is work the
 game already does. Kept as research and as the fallback if the death entry turns
 out to need more context than `D`.
+
+### Two probes: the exit works, the death jump does not
+
+First practice-ROM code that does something. Both live in
+`src/asm/experiments/`, both hook `$80:B8F5` in the level gameplay loop, and
+both fire on Start newly pressed while Select is held, reading the game's own
+`$0094`/`$0090` and clearing the Start bit so the crest screen does not also
+open.
+
+#### `death_probe.asm` — FAILED
+
+Sets `D = $1000` and jumps to the death entry `$80:E602`. The jump itself is
+fine: the watch confirms `$80:E606` executing with `D=1000` and zeroing HP, so
+the hook, the hotkey and the direct-page fixup all work. But the screen goes
+black within 20 frames and stays black, with `$0036` still `$04` and HP stuck
+at 0.
+
+The direct page was not the missing piece. The damage handler does a large
+amount of player-state setup between the HP subtract at `$80:E578` and the
+death check at `$80:E5C6` — `$0B`, `$00`, `$0A`, `$4B`, `$4A`, `$78`, `$49`,
+`$05`, `$3C`, `$6B` — and jumping straight to `$E602` skips all of it. Kept as
+a recorded negative result.
+
+#### `exit_probe.asm` — PASSES
+
+Jumps to `$80:BB30`, the exit-area sequence, with no direct-page fixup (the
+loop's `D=0` is what that path expects, since it is normally reached from level
+code).
+
+| Frame | `$8D` | `$0036` |
+|-------|-------|---------|
+| 399 | `$02` (area 1) | `$04` |
+| 600 | `$BC` (overworld) | `$10` |
+| 880 | `$BC` | `$10` |
+
+The overworld renders correctly with Firebrand placed by the game, and — the
+test the `$0036` poke failed — **it is interactive**: holding Right for 320
+frames moves him visibly across the map, from the inland pedestal out to the
+coastline. So the exit half of the practice loop works on the game's own code
+path, in about twelve instructions.
+
+#### What this says about the design
+
+The contrast between the two probes is the "make the game do the work"
+principle paying off and being punished in the same session. `$80:BB30` works
+because the game's own teardown runs ahead of the state change; `$80:E602`
+fails because it sits *past* the setup it depends on. **The useful rule is to
+enter at the start of the game's sequence, not at the furthest point down it** —
+which corrects the corollary written into `CLAUDE.md` earlier today.
+
+For a retry feature, the remaining options are to enter the damage path at
+`$80:E56B` with lethal damage in `A` (untested), or to drop the in-place retry
+and rely on exit-and-re-enter, which now works.
 
 ### Next capture
 
