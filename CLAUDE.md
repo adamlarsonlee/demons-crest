@@ -172,6 +172,19 @@ Keep these current — they are the project's memory:
 Record negative results. Knowing what an address *isn't* is worth as much as
 knowing what it is, and half of `docs/recon.md`'s value is the closed-leads list.
 
+**An address is not found until it is in `memory-map/README.md`.** `docs/recon.md`
+holds the evidence and the routine that established it; the RAM map is where it
+gets looked up months later. Propagate it in the same commit that establishes
+it, with the address of the code that proves it, so the next session can
+re-verify instead of re-deriving. Addresses have sat in `recon.md` while the map
+went stale, and the load-bearing ones — the task-switcher block, the CGRAM
+shadow, the overworld destination index — are exactly the ones that get lost.
+
+**Read the map before hunting.** It already held the scroll and phial content
+values, Sulfur among them, while they were being re-derived from the ROM. Check
+what is documented before disassembling; this repo has more written down than it
+feels like.
+
 ## External sources
 
 - `Myriachan/RockmanXPractice` — the architectural model (bass, USA Rockman X)
