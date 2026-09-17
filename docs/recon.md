@@ -1366,7 +1366,8 @@ $80:CAD7 -> $CA7D    $80:CD26 -> $CCD2
 Plus sites in banks `$84` and `$BE`. Short spans of 10-20 bytes are fade and
 wait loops; the longer ones are candidates for mode loops.
 
-**Still open: the level's gameplay loop.** The level mode handler is `$80:B702`
+**FOUND — see "The level gameplay loop" below.** The note that follows is kept
+for the method. **Still open: the level's gameplay loop.** The level mode handler is `$80:B702`
 (dispatch state `$04`), and its setup runs at least to `$80:B824`, containing
 three short wait loops (`$80:B746`, `$80:B799`, `$80:B7EB`) that are fades, not
 gameplay. No frame-sync-plus-backward-branch exists between `$80:B7ED` and
@@ -1377,6 +1378,54 @@ gameplay loop has not been located.
 showed `$80:9536` and `$80:953F` writing `$0016` every frame. Those are inside
 the per-frame path, so walking their caller chain should reach the loop — no
 new measurement needed, just a static trace back from a PC already observed.
+
+### The level gameplay loop, and the hook slot
+
+Found by watching writes to `$0073` across a level entry and tallying the PCs:
+
+| PC | Writes | What |
+|----|--------|------|
+| `$80:AFF3` | 79 | the overworld loop, frames 0-79 before entry |
+| `$80:B824` | 1 | level setup zeroing the counter |
+| `$80:B8FD` | 320 | **the level gameplay loop** |
+
+```
+$80:B8EB  22 26 AE 85   JSL $85AE26
+$80:B8EF  20 6B F6      JSR $F66B
+$80:B8F2  20 49 B9      JSR $B949
+$80:B8F5  A9 FF         LDA #$FF
+$80:B8F7  8D 86 00      STA $0086
+$80:B8FA  EE 73 00      INC $0073
+$80:B8FD  AD 54 0E      LDA $0E54
+$80:B900  0D 55 0E      ORA $0E55
+$80:B903  D0 03         BNE $80:B908    ; leave the loop
+$80:B905  4C 43 B8      JMP $B843       ; otherwise go round again
+```
+
+So the loop body is **`$80:B843` to `$80:B905`**, closed by `JMP $B843`, and it
+exits when `$0E54 | $0E55` becomes non-zero. This is a task-context per-frame
+site in bank `$80`, which is what both hotkey actions need.
+
+**A 5-byte hook slot** exists at `$80:B8F5`: `LDA #$FF / STA $0086` is five
+bytes, so it takes a `JSL` (four) plus a `NOP`, with the displaced two
+instructions moved into the hook. Free space is at `$98:A4B5`, a different bank,
+so it must be `JSL`/`RTL` rather than `JSR`.
+
+**Complication, measured:** the watch log shows `D = 0000` throughout this loop,
+but `$80:E602` addresses HP as `STZ $62` / `STZ $61`, i.e. it expects
+`D = $1000`. So a hook here cannot simply `JMP $E602` — it has to set the direct
+page first (`REP #$20 / LDA #$1000 / TCD`). Whether `D` is the *only* context
+the death code needs is **untested**: it goes on to touch `$3C`, `$05`, `$06`
+and `$04` on that direct page and calls `JSR $BD76`, so it may assume more of
+the player-update state than the direct-page register alone.
+
+That is the next thing to settle, and it is what the first patch should probe:
+hook `$80:B8F5`, set `D`, jump to `$E602`, and see whether Firebrand dies
+cleanly and the menu appears, or whether something further is missing.
+
+A safer fallback if that context turns out to be insufficient: find the entry of
+the damage routine containing `$80:E5C4` and apply lethal damage through the
+normal path, which gets the game to set up its own context.
 
 ### Next capture
 

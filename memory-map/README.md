@@ -13,6 +13,8 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000070 |2|Unsigned|Scheduler scratch, caller stack pointer|Saved with `TSC` at `$80:81CC`, restored at `$80:82BA`
 |000072 |1|Unsigned|Current task index|The `Y` used for every `$0030`-`$0036` task field
 |00008D |1|Unsigned|Current area ID **x 2**|Halve it for the `docs/areas.md` index. Reads `$BC` on the overworld, which is a mode marker and not an area
+|000073 |1|Unsigned|Frame counter|Incremented once per frame by whichever mode loop is running: `$80:AFF0` on the overworld, `$80:B8FA` in a level. Zeroed by level setup at `$80:B821`
+|000086 |1|Unsigned|Set to $FF each frame by the level loop|Written at `$80:B8F7`; purpose unidentified
 |000090 |2|Binary|Controller 1 held|Standard layout: B $8000, Y $4000, Select $2000, Start $1000, Up $0800, Down $0400, Left $0200, Right $0100, A $0080, X $0040, L $0020, R $0010
 |000092 |2|Binary|Controller 1 held, previous frame|
 |000094 |2|Binary|Controller 1 newly pressed|Edge computed by the game in NMI at `$80:8374`; set for exactly one frame
@@ -21,6 +23,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |00009A |2|Binary|Controller 2 newly pressed|
 |0000C0 |1|Unsigned|Viewport Something ?
 |000300 |512|-|CGRAM shadow|256 colours, loaded verbatim from ROM bank `$99` at `$99:AB40 + id x $C0`. `$7F:A000` holds a second copy
+|000E54 |2|Unsigned|Level loop exit condition|`$80:B8FD` leaves the gameplay loop when `$0E54 | $0E55` is non-zero
 |000E56 |1|Unsigned|Current area ID x 2, second copy|Written alongside `$8D` at `$85:B0C2`
 |000EA7 |1|Unsigned|Per-area value from `$81:E182`|Written at `$85:B0C8` on level entry; meaning unidentified
 |001031 |2|Unsigned|Horizontal Position (Coarse)
