@@ -1602,7 +1602,30 @@ is not a lever.
 would be the better fix by the "make the game do the work" rule, and it has not
 been found.
 
-**A workable fix that is fully in our control:** the block is intact at the
+**Parked.** Two further attempts did not fix it, and the investigation was
+stopped as a nice-to-have with diminishing returns.
+
+`$80:BB30` turned out to be 0x29 bytes into the routine, whose real entry is
+`$80:BB07` — it takes a 0-15 return location in `A`, stores it to `$0EA6`, and
+then makes three calls that entering at `$80:BB30` skipped. `exit_probe.asm`
+now enters there, passing back `$0EA6`'s existing value, which is the correct
+way to call it regardless. **It does not change the placement:** the position
+block is still cleared and the landing spot is still the origin.
+
+`$7E:0EA6` is the **overworld location index**, set by flying around the map
+rather than by the level load — a forced entry through `$1326` leaves it at
+`$00`, while dumps from real navigation hold 5 for stage 3, 4 for ice, 1 for
+water and 0 for town and stage 1. It is preserved into the level. Poking it to
+`$00` versus `$05` before the exit produced an identical position block, so it
+does **not** drive the landing spot, though the rendered frames differed, so it
+drives something. Unresolved.
+
+Two of the three tests run here were confounded and are worth flagging so they
+are not cited as evidence: entering from area 1 and from a `$1326`-forced ice
+entry both leave `$0EA6` at `$00`, so neither could distinguish correct
+placement from placement at the origin.
+
+**A fix that was never tried, and is still the fallback:** the block is intact at the
 moment our hook runs, so save `$1DFA`-`$1E17` into spare RAM before jumping to
 `$80:BB30`, then restore it from a second hook placed just after the clear loop
 at `$85:997F`. Thirty bytes each way. `$7F:C668`-`$7F:C802` is documented in

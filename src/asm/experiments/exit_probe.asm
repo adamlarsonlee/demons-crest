@@ -43,11 +43,12 @@ warnings disable Wfreespace_leaked
 !pad_new_hi  = $7E0095          ; high byte of $0094; Start  is bit 4 ($1000)
 !pad_held_hi = $7E0091          ; high byte of $0090; Select is bit 5 ($2000)
 !loop_flag   = $7E0086
-!exit_entry  = $80BB30
+!exit_entry  = $80BB07          ; the routine's real entry, not $80:BB30
+!return_loc  = $7E0EA6          ; per-stage overworld return location
 
 assert read1($80B8F5) == $A9, "hook site changed: expected LDA #$FF at $80:B8F5"
 assert read1($80B8F7) == $8D, "hook site changed: expected STA $0086 at $80:B8F7"
-assert read1($80BB30) == $22, "exit entry changed: expected JSL at $80:BB30"
+assert read1($80BB07) == $29, "exit entry changed: expected AND #$0F at $80:BB07"
 
 org $80B8F5
     JSL exit_hook
@@ -77,8 +78,11 @@ exit_hook:
     PLA
     PLA
 
-    ; Hand over to the game's own exit. JML so the program bank becomes $80
-    ; and the sequence's short JSLs and JML resolve as written.
+    ; Hand over to the game's own exit, at its real entry rather than 0x29
+    ; bytes in. $80:BB07 takes a 0-15 return location in A, ANDs it and stores
+    ; it to $0EA6; passing back the value already there is idempotent and
+    ; keeps the three calls that entering at $80:BB30 skipped.
+    LDA.l !return_loc
     JML !exit_entry
 
 .no_hotkey:
