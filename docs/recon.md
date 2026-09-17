@@ -1108,6 +1108,89 @@ proven and "the exit leaves a usable overworld" is not.
 undisassembled; it is no longer on the critical path, since `$80:829B` is the
 confirmed request API.
 
+### The mode graph, from the state-change call sites
+
+Every state change goes through `JML $80:829B`, and the state is pushed by an
+`LDA #$xx` immediately before it. Fifteen sites, so the whole mode graph is
+readable statically:
+
+| Site | State pushed | Goes to |
+|------|--------------|---------|
+| `$80:BB3C` | `$10` | **the overworld — this is the "exit area" routine** |
+| `$BE:F565` | `$10` | the overworld, same four-instruction shape |
+| `$84:C1FC` | `$04` or `$10` | **conditional — the death menu**, see below |
+| `$85:B0D6` | `$04` | the level (the entry path already traced) |
+| `$82:CAF3`, `$84:8570`, `$84:EFEA`, `$85:C485`, `$BE:F4D1` | `$04` | the level |
+| `$84:814B`, `$84:C25A`, `$85:9497`, `$85:A512` | `$02` | |
+| `$84:88D4` | indexed | a table at `$9B71,X` |
+| `$BE:85B5` | `$10` | via `JSL $BE:85C9` |
+
+#### `$80:BB3C` — exit to the overworld
+
+```
+$80:BB34  85 84         STA $84
+$80:BB36  A2 10         LDX #$10
+$80:BB38  22 12 82 80   JSL $808212
+$80:BB3C  A9 10         LDA #$10
+$80:BB3E  5C 9B 82 80   JML $80829B
+```
+
+Four instructions. This is the game's own stage exit, and replicating it is the
+right implementation for an exit hotkey — far better than poking `$0036`
+directly, which the sweep below shows is unreliable.
+
+#### `$84:C1FC` — the death menu's branch
+
+```
+   29 01      AND #$01
+   D0 04      BNE +4
+   A9 04      LDA #$04      ; continue from the current stage
+   80 02      BRA +2
+   A9 10      LDA #$10      ; return to the overworld map
+   5C 9B 82 80
+```
+
+This is the "continue / return to map / quit" menu the game shows on death,
+choosing the next state from a bit. Useful as a second, always-available exit,
+and as the model for how the practice ROM should present a choice.
+
+#### Poking `$0036` directly is unreliable
+
+Sweeping task 0's state across every table value from in-level, with status set
+to `$08` as `$80:829B` does:
+
+| State poked | Result |
+|-------------|--------|
+| `$10` | works — clean overworld, `$8D` `$02` -> `$BC` |
+| `$0C`, `$14` | black screen |
+| `$00`, `$02`, `$06`, `$08`, `$0A`, `$0E`, `$12`, `$16` | no effect; the level keeps running and the poked value simply sits in `$0036` |
+
+So the scheduler does not re-dispatch on a bare state write in general, and the
+one value that worked did so for reasons not yet understood. **Use the game's
+own exit routine, not a state poke.**
+
+#### The USA-to-JP offset in bank `$80` is `-$1C`
+
+`areas.md` records USA `$80:BB58` as "exit area"; the JP routine is `$80:BB3C`.
+FredYeye's USA `_80BEBA` is JP `$80:BE9E`. Both are `$1C` apart, with matching
+contents. Useful for crossing the other bank `$80` landmarks, though it holds at
+two sites and is **not proven to apply generally** — verify each crossing by
+comparing the instructions, not by trusting the constant.
+
+#### Two things that did not work
+
+Poking `$1062` (current HP) to zero does **not** kill Firebrand: HP stayed at 0
+for 650 frames with no death, so death is triggered from the damage routine
+rather than by polling HP. And the phial slots `$1E35`-`$1E39` are **all zero**
+in `states/allitems.state`, so that save has no sulfur potion and cannot test
+the potion exit without one being granted first. The item-id table the shop
+fills slots from is at `$85:E64F` (`$85:CD36 LDA $E64F,X` / `$85:CD3A STA
+$1E35,X`).
+
+Incidental corroboration of the controller finding: the game's own menu code at
+`$85:CD4B` does `LDA $0095 / BIT #$80`, i.e. tests B in the newly-pressed word
+at `$0094`.
+
 ### Next capture
 
 The highest-value remaining dump is **forest section 3 with the canopy
