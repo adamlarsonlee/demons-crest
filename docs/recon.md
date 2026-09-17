@@ -14,7 +14,7 @@ watched live and written to before being committed to assembly.
 | # | Target | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
-| 2 | `current_level` | partial | `$7E:1D82` is the area's **graphics** index; the layout selector is still open |
+| 2 | `current_level` | open | `$7E:1D82` retracted — not area-discriminating across seven dumps; see "Seven named-area WRAM dumps" |
 | 3 | Level-load entry | partial | Per-mode setups and loops found; the area-specific load path is not |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
@@ -546,3 +546,116 @@ Emulators tolerate things a console does not. Code must:
 - Keep any NMI-time work inside the vblank budget.
 - Avoid writes to PPU registers outside vblank.
 - Use only documented 65816 opcodes.
+
+## Seven named-area WRAM dumps (2026-09-17)
+
+Seven full CPU-bus dumps were captured on a GUI emulator at named locations and
+sliced to WRAM in `states/wram/` (see `MANIFEST.md` there for the file list,
+hashes and capture caveats). This is the "raw WRAM dump per named area" that
+`CLAUDE.md` asked for. Validation before use:
+
+- The ROM region of every dump matches `rom/DemonsBlazon.sfc` byte for byte, so
+  all seven are against the correct unmodified JP ROM.
+- All 21 pairs are genuinely distinct — the closest pair (`forest`/`ice`)
+  differs in 9.1% of page 0, every other pair in 15-40%. The lesson-3 trap of
+  diffing two states that are really the same area does not apply here.
+- `$7E:008D` reads `$BC` in the `overworld` dump, matching the closed-lead note
+  for that address. Independent confirmation that the WRAM slice is aligned.
+- The progress block `$1E50`-`$1E57` is `14 FF FF FF FF FF FF 03` in all seven,
+  identically, as expected from one password-loaded save.
+
+### `$7E:1D82` does not identify the area
+
+Contents of `$1D82`-`$1D8A` per dump:
+
+| Dump | `$1D82`-`$1D8A` |
+|------|-----------------|
+| `forest` | 01 00 32 02 04 03 03 00 00 |
+| `forest-2` | 01 00 32 02 04 08 01 00 00 |
+| `forest-3-no-canopy` | 01 00 32 02 04 0A 00 00 00 |
+| `ice` | 01 00 32 02 04 03 03 00 00 |
+| `water` | 01 00 32 02 04 08 03 00 00 |
+| `town` | 07 00 08 04 03 01 00 00 00 |
+| `overworld` | 07 00 08 04 03 01 00 00 00 |
+
+`$1D82`-`$1D86` is byte-identical across five visibly different areas, and
+`$1D87`/`$1D88` collide (`forest` and `ice` are both `03 03`). Town and the
+overworld share the whole record.
+
+So the earlier reading — "`$7E:1D82` the stored area index: 02 for tree, 07 for
+castle" — **holds only for the two areas it was measured in**. Across seven it
+is not an area index, not even a graphics index; the two-sample agreement with
+the `$81:C0EE` table entry was coincidence of exactly the kind lesson 1 warns
+about. What `$1D82,X` actually is remains open: `$84:9C60` writes it with a
+varying `X`, so it is an array, and these dumps show its contents are a
+per-mode record rather than a per-area one. **Unverified hypothesis:** it is the
+queue of graphics lists a mode loads. Falsify with a watchpoint on `$1D82,X`
+across one load, logging `X` — if `X` is a slot counter walking a list, the
+hypothesis stands; if `X` is constant, it falls.
+
+### Per-area palettes — `$99:AB40 + id x $C0`
+
+WRAM `$0300`-`$04FF` is the CGRAM shadow (512 bytes = 256 colours). It is
+loaded verbatim from ROM bank `$99`, and `$7F:A000` holds a second copy of the
+same buffer — which is why `$0431` and `$1A131` always carry equal values.
+
+The background palette base per dump is an exact multiple of `$C0` from
+`$99:AB40` in all six cases — a consistent stride, measured, not assumed:
+
+| Dump | Palette base | id |
+|------|--------------|-----|
+| `town` | `$99:AB40` | 0 |
+| `forest`, `forest-2` | `$99:ACC0` | 2 |
+| `forest-3-no-canopy` | `$99:AF00` | 5 |
+| `ice` | `$99:B380` | 11 |
+| `water` | `$99:B440` | 12 |
+| `overworld` | `$99:B980` | 19 |
+
+`forest` and `forest-2` share a palette, as two sections of one stage should.
+
+The **stride** is solid at 6/6, but the block *size* is not: the verbatim
+ROM-to-WRAM run at `$0340` is 192 bytes for `town`, `forest` and `forest-2`,
+128 for `forest-3-no-canopy`, `ice` and `water`, and only ~32 for `overworld`.
+So part of the CGRAM shadow is overwritten after the copy — by fades or by
+sprite palettes — and `$C0` should be read as the table stride, not as a
+confirmed block length.
+
+This id is currently the best available area fingerprint, and unlike every
+WRAM candidate it is anchored to a ROM address rather than to cross-sample
+correlation. The table mapping area -> palette id has **not** been found: no
+116-byte run of small values in the ROM carries the required entries, and no
+16-bit table of these bases exists.
+
+### Negative results from the dumps
+
+The dumps do **not** contain the area or layout index. Specifically:
+
+- No WRAM byte holds `(1, 2, 3, ., ., 4)` — the indices `docs/areas.md` predicts
+  for S1_1, S1_2, S1_3 and S2 Town. Nor does any 16-bit word.
+- No WRAM byte holds three consecutive values across the three forest dumps,
+  which a section index walked in order would.
+- Neither the palette id nor the 16-bit palette base is retained anywhere in
+  WRAM, in any dump.
+
+Taken together with `$84:9C60` writing `$1D82,X` from `$0000` — and poking
+`$1D82` after the load having no effect — the picture is that **the area index
+is consumed during the load and not kept in WRAM afterwards.** That is the
+reason targets 2 and 3 have resisted, and it means no quantity of area dumps
+will settle them on their own. A write-watchpoint during the load is required.
+
+### Closed leads from this batch
+
+| Address / site | What it actually is |
+|----------------|---------------------|
+| `$7E:0079`, `$7E:00D9`, `$7E:0E31` | three copies of one small per-area value (`05 06 08 08/16 07 04`); not an area index — `ice` collides with `forest-3`, and `town` and `overworld` share it |
+| `$7E:1D82`-`$1D86` | a per-mode record, identical across five distinct areas |
+| `$7E:2200`-`$31FF` | object/sprite arrays; dense even-address entries whose small values track enemy type per area. Every "6 distinct small values" hit in this range is one of these |
+| `$7F:A000`-`$A1FF` | second copy of the `$0300` CGRAM shadow |
+
+### Next capture
+
+The highest-value remaining dump is **forest section 3 with the canopy
+triggered**. Diffed against `forest-3-no-canopy` it isolates the layout selector
+directly: same area, same palette, same tileset, one differing layout. That is a
+far tighter experiment than comparing different areas, where a load touches
+hundreds of variables.

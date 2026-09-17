@@ -38,7 +38,7 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 | # | Target | Status |
 |---|--------|--------|
 | 1 | Progress-state region | **done** — `$7E:1E50`-`$1E57`, mapped bit-for-bit |
-| 2 | Area / level index | **partial** — `$7E:1D82` is the *graphics* index; the layout selector is unfound |
+| 2 | Area / level index | **open** — `$7E:1D82` retracted; seven area dumps show the index is not retained in WRAM at all |
 | 3 | Level-load entry | **partial** — graphics path traced end to end; layout path unfound |
 | 4 | Controller RAM | open |
 | 5 | Per-frame hook | **done** — NMI `$FFA4` -> `$80:8329`; code injection proven transparent |
