@@ -15,7 +15,7 @@ watched live and written to before being committed to assembly.
 |---|--------|--------|-------|
 | 1 | Progress-state region | **found** | Contiguous 8 bytes at `$7E:1E50`-`$1E57`; see memory-map/README.md |
 | 2 | `current_level` | **found** | `$7E:008D` is the area ID **x 2**; see "`$7E:008D` is the area ID" |
-| 3 | Level-load entry | partial | Per-mode setups and loops found; the area-specific load path is not |
+| 3 | Level-load entry | **found** | `$85:B0BA`; destination `$7E:1326` -> table `$81:E0F1` -> `$8D`. Warp verified |
 | 4 | `controller_1_new` | open | Hotkey edge detection |
 | 5 | Frame hook | **found + proven** | NMI vector `$FFA4` jumps to `$80:8329`; chaining through injected code verified |
 | 6 | `rng_value` | open | Display and reseeding |
@@ -800,6 +800,102 @@ With `$8D` decoded, the palette ids from the CGRAM finding map to actual areas:
 
 Two Stage 3 sections sharing palette 2 is consistent, and `$BD:9FF6` pairs them
 too.
+
+### The level-load entry, and a working warp (target 3)
+
+Found by watchpointing `$8D` across a level entry, exactly as FredYeye
+suggested. One write per load:
+
+```
+[watch] write $81008D (wram $0008D) = 02  PC $85:B0C2  A=FF02 X=0004 Y=0000 D=1300 DB=81
+```
+
+The site, with the alternative constant path above it:
+
+```
+$85:B0B0  A9 54         LDA #$54
+$85:B0B2  8D 8D 00      STA $008D
+$85:B0B5  8D 56 0E      STA $0E56
+$85:B0B8  80 11         BRA $85:B0CB
+$85:B0BA  A4 26         LDY $26         ; D=$1300, so $7E:1326
+$85:B0BC  B9 F1 E0      LDA $E0F1,Y     ; DB=$81, so $81:E0F1
+$85:B0BF  8D 8D 00      STA $008D       ; area x 2
+$85:B0C2  8D 56 0E      STA $0E56       ; second copy
+$85:B0C5  B9 82 E1      LDA $E182,Y
+$85:B0C8  8D A7 0E      STA $0EA7
+```
+
+Two traps worth naming, because both cost time here. `LDY $26` is
+**direct page** and `D=$1300`, so the selector is `$7E:1326`, not `$0026`.
+And `LDA $E0F1,Y` is **absolute-indexed off DB**, and `DB=$81` while the
+program bank is `$85` — the table is `$81:E0F1`, not `$85:E0F1`. The
+watchpoint logs `D` and `DB` precisely so this is recoverable.
+
+#### `$81:E0F1` — the destination table
+
+Thirteen bytes, each an area x 2. These are the stage entry points the
+overworld can reach:
+
+| Destination (`$1326`) | `$81:E0F1` | Area | Name |
+|---|---|---|---|
+| 0 | `$02` | 1 | S1_1 |
+| 1 | `$08` | 4 | S2 Town |
+| 2 | `$14` | 10 | S3_1 |
+| 3 | `$24` | 18 | S4_1 |
+| 4 | `$30` | 24 | S5_1 |
+| 5 | `$3A` | 29 | S6_1 |
+| 6 | `$4A` | 37 | unnamed |
+| 7 | `$58` | 44 | unnamed |
+| 8 | `$62` | 49 | unnamed |
+| 9 | `$6E` | 55 | **the shop** (identified from the screenshot) |
+| 10 | `$68` | 52 | unnamed |
+| 11 | `$6A` | 53 | Trio the Pago 3 |
+| 12 | `$6C` | 54 | unnamed |
+
+A parallel table at `$81:E182` (`02 x7` then `04 x6`) feeds `$0EA7`; role
+unknown.
+
+#### The warp works
+
+Poking the destination word before the routine reads it produces a **clean**
+load — correct layout, tileset and palette, no tearing:
+
+```sh
+docker run --rm -v "$PWD":/work -v "$ROM":/work/rom/DemonsBlazon.sfc:ro \
+    demons-crest-build python3 tools/headless.py rom/DemonsBlazon.sfc \
+    --load-state states/allitems.state --frames 700 --press '10:y,11:y' \
+    --poke '76:0x1326=0x01,76:0x1327=0x00' --dump 690
+```
+
+Verified for destinations 1, 2, 3, 4, 5 and 9: `$8D` came out as the table
+predicts every time, and the frames render as coherent areas. Destination 1 is
+Town, 5 is the ice area, 9 is the shop.
+
+Timing, measured: Y is pressed at frame 10, and `$8D` flips from `$BC` to its
+area value between frames 79 and 80. Poking `$1326` anywhere in 76-79 works.
+
+#### Poking `$8D` after the write tears the load
+
+Poking `$8D` at frame 80 — one frame *after* it is written — gives Town's
+**layout** rendered with the forest's **tile graphics**: recognisable Town
+geometry in the wrong tiles. Identical result whether poked once at frame 80 or
+held across frames 61-140, so every consumer runs after that write, but the
+VRAM upload happens in the same frame as the write, before the frame boundary a
+poke can reach.
+
+Consequence for the practice ROM: the 13 destinations are warpable by writing
+`$1326` alone, but **warping to an arbitrary one of the 116 areas needs a ROM
+hook at `$85:B0BF`** — substitute the value the table read produced, and the
+game's own load runs to completion with it. That is the natural shape for the
+feature anyway, and it is a two-instruction patch. **Untested**; falsify by
+patching `$85:B0BC` to load from a free RAM byte instead of `$81:E0F1,Y` and
+warping to a mid-stage area such as 12 (S3_2a).
+
+#### Correction: `allitems.state` enters S1_1
+
+`$8D = $02` on that state's entry, so the destination is area **1**, S1_1. The
+earlier "index 2 = S1_2" reading came from `$1D82`, which is retracted. Any
+note elsewhere saying `allitems.state` enters S1_2 is wrong.
 
 ### Next capture
 

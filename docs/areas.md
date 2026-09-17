@@ -27,6 +27,17 @@ level-section index rather than a level plus a separate section value. There are
 
 So the two areas measured here are **index 2 = S1_2** and **index 7 = S2_3b**.
 
+## Additions from the destination table
+
+`$81:E0F1` (JP) is the 13-entry overworld destination table; see `docs/recon.md`.
+It names one previously unnamed slot:
+
+- **55 — the shop.** Reached as destination 9; identified from a screenshot of
+  the warp (candles, shelves of items, a shopkeeper).
+
+Destinations 6, 7, 8, 10 and 12 point at areas 37, 44, 49, 52 and 54, which are
+also unnamed here and are each reachable in one command now.
+
 ## What this settles
 
 - **WRAM addresses are shared between USA and JP.** The randomizer's ASM uses

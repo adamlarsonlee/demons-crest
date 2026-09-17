@@ -39,7 +39,7 @@ Phase 0 (build pipeline) is done. Phase 1 recon is partly done.
 |---|--------|--------|
 | 1 | Progress-state region | **done** — `$7E:1E50`-`$1E57`, mapped bit-for-bit |
 | 2 | Area / level index | **done** — `$7E:008D` is the area ID **x 2**; confirmed three ways |
-| 3 | Level-load entry | **partial** — graphics path traced; `$80:BE9E` loads from `$BD:9FF6` indexed by `$8D`, role unconfirmed |
+| 3 | Level-load entry | **partial** — `$85:B0BA`: `$7E:1326` -> `$81:E0F1` -> `$8D`. Clean warp verified, but only riding the game's own overworld trigger; warping from arbitrary state is untested |
 | 4 | Controller RAM | open |
 | 5 | Per-frame hook | **done** — NMI `$FFA4` -> `$80:8329`; code injection proven transparent |
 | 6 | RNG | open |
@@ -134,7 +134,7 @@ diverges grossly.
 The headless harness can observe state and force values, but it cannot single
 step. The blocker on targets 2, 3, 4 and 6 is not tooling so much as **reliable,
 known destinations**: only two areas are reachable dependably here
-(`states/allitems.state` + Y enters S1_2, `states/bossrush.state` + Y enters the
+(`states/allitems.state` + Y enters S1_1, `states/bossrush.state` + Y enters the
 castle), and overworld navigation does not work as a way to reach a third —
 flying right for 250/350/450/550 frames and pressing Y all enter the same place.
 
