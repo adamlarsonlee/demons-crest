@@ -38,12 +38,6 @@ game's live state at `$7E:1FA0` with `MVN`. One table per supported route. This
 is exactly the shape the Demon's Crest route states need, with `$1E50`-`$1E58`
 as the destination instead.
 
-**A caution, from the version history.** "1.20 Added Total's saved state code"
-followed by "1.21 Rewrote the saved state code to be much more stable". The save
-state needed a stability rewrite in a hack that was otherwise mature, and it is
-credited to different contributors than the rest. Treat a save state that works
-once as unproven.
-
 **Quick death by writing a state variable, not by jumping.** It checks
 `current_play_state` (`$7E:00D2`) is the normal value, then writes the death
 value to it and to `countdown_play_state` (`$7E:00D6`). A data write, so the
@@ -69,6 +63,18 @@ L, `$0040` X, `$0080` A, `$0100`-`$0800` the d-pad, `$1000` Start, `$2000`
 Select, `$4000` Y, `$8000` B — match what this project measured at
 `$7E:0090`/`$0092`/`$0094`, in the same current/previous/new three-word shape.
 Independent corroboration from a different game.
+
+### A caution about its save state
+
+Its version history reads "1.20 Added Total's saved state code" then "1.21
+Rewrote the saved state code to be much more stable", and the save state is
+credited to different contributors than the rest of the hack. It was the
+feature that gave a mature hack trouble. Treat a save state that works once as
+unproven.
+
+Note also that its readme documents **no limitation** on the save state — only
+that Select+R saves and Select+L loads. Any claim about what it can or cannot
+restore across is inference from `hack.asm`, not from its documentation.
 
 ### What does not transfer
 
