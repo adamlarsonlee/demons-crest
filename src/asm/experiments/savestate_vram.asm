@@ -55,10 +55,14 @@ warnings disable Wfreespace_leaked
 !vmdatahw    = $002119
 !nmitimen    = $004200
 
+assert read1($00FFD6) == $00, "header already declares a chipset"
 assert read1($00FFD8) == $00, "header already declares SRAM"
 assert read1($80B8F5) == $A9, "hook site changed: expected LDA #$FF at $80:B8F5"
 
-; 128 KB of SRAM: $07 is the largest snes9x honours.
+; The chipset byte must also declare RAM; $00 means "ROM only".
+org $00FFD6
+    db $02                      ; ROM + RAM + battery
+; 128 KB of SRAM.
 org $00FFD8
     db $07
 
@@ -86,6 +90,7 @@ state_hook:
 
 ; ---------------------------------------------------------------------------
 .save:
+    PHB                         ; not inside prologue: see the note there
     JSR prologue
     REP #$30
     LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $70,$7E   ; $7E:0000-$7FFF
@@ -93,10 +98,12 @@ state_hook:
     SEP #$30
     JSR vram_to_sram
     JSR epilogue
+    PLB
     RTL
 
 ; ---------------------------------------------------------------------------
 .load:
+    PHB
     JSR prologue
     REP #$30
     LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7E,$70
@@ -104,9 +111,15 @@ state_hook:
     SEP #$30
     JSR sram_to_vram
     JSR epilogue
+    PLB
     RTL
 
 ; ---------------------------------------------------------------------------
+; PHB/PLB are deliberately in the callers, NOT here. A PHB before an RTS leaves
+; the pushed bank byte on top of the return address and the RTS returns into
+; garbage - the same hazard CLAUDE.md records for the $80:821E hook. An earlier
+; version of this file had exactly that bug and froze the game.
+;
 ; NMI must be off across the whole copy: MVN is interruptible, and an NMI
 ; landing on a half-restored stack would push onto corrupt memory. Forced blank
 ; makes VRAM accessible outside vblank. $4200 and $2100 are write-only, so
@@ -119,12 +132,10 @@ prologue:
     STA.l !nmitimen             ; NMI off
     LDA #$8F
     STA.l !inidisp              ; forced blank
-    PHB
     RTS
 
 epilogue:
     SEP #$30
-    PLB                         ; MVN left DBR as its destination bank
     LDA #$0F
     STA.l !inidisp              ; screen back on
     LDA #$B1

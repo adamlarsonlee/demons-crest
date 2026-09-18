@@ -316,6 +316,73 @@ first test, which is not the same as being stable.
 
 ---
 
+## 4b. Save state with VRAM — `savestate_vram.asm`, PARTIAL
+
+Saves the two dynamic WRAM halves plus all of VRAM into 128KB of SRAM. Builds,
+runs, and is **correct in isolation but wrong after the camera moves**, so it is
+not ready.
+
+### SRAM works; the harness view of it does not
+
+An earlier conclusion that SRAM was unreachable was wrong. `sram_where.asm` has
+the ROM write a marker and read it straight back into WRAM:
+
+| Write target | Read back |
+|--------------|-----------|
+| `$70:0000` | `$A5` as written |
+| `$71:0000` | `$5A` as written |
+| `$F0:0000` | `$3C` as written |
+
+So the CPU can read and write SRAM. What does **not** work is
+`retro_get_memory_data(RETRO_MEMORY_SAVE_RAM)` — it returns a buffer that is
+uniformly `$60` and never reflects a write. The header needs the **chipset
+byte** at `$00:FFD6` set to `$02` as well as the size byte; `$00` means "ROM
+only".
+
+snes9x's own source confirms the mapping is fine: `map_LoROMSRAM` maps banks
+`$70`-`$7D` and `$F0`-`$FF`, and the offset is
+`(((Address & 0xff0000) >> 1) | (Address & 0x7fff)) & SRAMMask`, which puts
+`$70:0000` at offset 0 and `$71:0000` at `$8000`. `SRAM_SIZE` is `0x80000`, so
+**snes9x allocates 512KB and accepts sizes up to `$09`** — the 128KB figure
+measured earlier was the libretro size *report*, not the emulator's limit.
+
+### What is verified
+
+| Check | Result |
+|-------|--------|
+| Save alters VRAM | 0 bytes |
+| Save then immediate load, VRAM | **0 of 65,536 differ** |
+| WRAM `$7E:0000`-`$7FFF` restored | 405 dirty before, **5** after |
+| WRAM `$7F:8000`-`$FFFF` restored | 735 dirty before, **0** after |
+| Excluded half `$7E:8000`-`$FFFF` | 0 dirty throughout |
+
+So the copy itself is right, in both directions, for both WRAM and all of VRAM.
+
+### The unresolved bug
+
+Save, scroll 200 frames, then load: VRAM ends up 35,076 of 65,536 bytes
+different from the save, and the frame shows persistent horizontal striping
+across the background. The frame *before* the load is clean, and the striping is
+still there 260 frames later, so the load introduces it and the game does not
+recover.
+
+Not explained by the obvious candidates: all of VRAM is copied, the dynamic WRAM
+halves verify clean, the CGRAM shadow at `$7F:A000` is inside a restored half,
+and scroll registers are write-only and rebuilt each frame from restored WRAM.
+
+Also visible: **the screen blacks out for roughly 18 frames** after a save,
+because the copy holds forced blank and NMI off for about 0.3s and the game
+takes a moment to restore brightness. Cosmetic, but noticeable.
+
+### A bug this file had, worth remembering
+
+The first version put `PHB` before `RTS` inside a subroutine, which left the
+pushed bank byte on top of the return address and froze the game. `CLAUDE.md`
+records exactly this hazard for the `$80:821E` hook. The freeze was invisible in
+the numbers — every diff read zero, which looked like a perfect restore until
+the "scrolled away" column also read zero, which is impossible for a running
+game.
+
 ## 5. Recorded failures
 
 Both are kept in `src/asm/experiments/` rather than deleted, because the reason
