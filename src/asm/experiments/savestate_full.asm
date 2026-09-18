@@ -149,100 +149,80 @@ epilogue:
     RTS
 
 ; ---------------------------------------------------------------------------
-; VRAM, 32768 words, split across two SRAM banks because the window is 32 KB.
-; VMAIN $80 increments after the high byte, so the access order is low then
-; high and no dummy read is needed.
+; VRAM and CGRAM, by DMA, following RockmanX2Practice's recipe in hack.asm.
+;
+; A hand-written PPU loop was tried first and failed in both directions. Three
+; mistakes, all visible in X2's table:
+;   * VMAIN ($2115) must be $00 - increment after the LOW byte. $80 was used.
+;   * VMADD ($2116) takes a WORD address, so the second half is $4000, not
+;     $8000.
+;   * A dummy read of $2139 after setting VMADD is required, not optional.
+;
+; DMA channel 1 is used, as X2 does. The game is not running DMA of its own here
+; because NMI is off and the screen is in forced blank.
+;
+; Register packing: a 16-bit store to $4312 sets A1T low and high; to $4314 sets
+; the A bank and DAS low; to $4315 sets DAS low and high. DAS $8000 is 32768
+; bytes, the size of one SRAM bank window.
 ; ---------------------------------------------------------------------------
 vram_to_sram:
-    SEP #$20
-    LDA #$80
-    STA.l !vmain
-    ; Prime the read prefetch. A read of $2139/$213A returns the prefetch
-    ; register, which is only loaded when VMADD is written or incremented, so
-    ; reading straight after setting VMADD=0 yields stale data - measured: the
-    ; first bytes came back $07 $09 where VRAM held $00 $00. Setting VMADD to
-    ; $FFFF and discarding one word wraps the address to 0 with VRAM[0]
-    ; prefetched, so the loop starts correctly aligned.
-    REP #$30
-    LDA #$FFFF
-    STA.l !vmaddl
-    SEP #$20
-    LDA.l !vmdatalr             ; discard
-    LDA.l !vmdatahr             ; discard; wraps VMADD to $0000
-    REP #$10
+    SEP #$30
+    LDA #$00 : STA.l !vmain         ; increment after the low byte, step 1 word
+    LDA #$81 : STA.l $004310        ; DMAP: B->A, word, two registers
+    LDA #$39 : STA.l $004311        ; BBAD = $2139, VRAM read
 
-    LDX #$0000
-.first:
-    LDA.l !vmdatalr : STA.l $740000,X
-    LDA.l !vmdatahr : STA.l $740001,X
-    INX : INX
-    CPX #$8000
-    BNE .first
+    REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
+    LDA.l !vmdatalr                 ; required dummy read
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$74 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B        ; run channel 1
 
-    LDX #$0000
-.second:
-    LDA.l !vmdatalr : STA.l $750000,X
-    LDA.l !vmdatahr : STA.l $750001,X
-    INX : INX
-    CPX #$8000
-    BNE .second
+    REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
+    LDA.l !vmdatalr
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$75 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
     RTS
 
 sram_to_vram:
-    SEP #$20
-    LDA #$80
-    STA.l !vmain
-    REP #$30
-    LDA #$0000
-    STA.l !vmaddl
-    SEP #$20
-    REP #$10
+    SEP #$30
+    LDA #$00 : STA.l !vmain
+    LDA #$01 : STA.l $004310        ; DMAP: A->B, word, two registers
+    LDA #$18 : STA.l $004311        ; BBAD = $2118, VRAM write
 
-    LDX #$0000
-.first:
-    LDA.l $740000,X : STA.l !vmdatalw
-    LDA.l $740001,X : STA.l !vmdatahw
-    INX : INX
-    CPX #$8000
-    BNE .first
+    REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$74 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
 
-    LDX #$0000
-.second:
-    LDA.l $750000,X : STA.l !vmdatalw
-    LDA.l $750001,X : STA.l !vmdatahw
-    INX : INX
-    CPX #$8000
-    BNE .second
+    REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$75 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
     RTS
 
-; ---------------------------------------------------------------------------
-; CGRAM, 512 bytes. $213B and $2122 each hold an internal low/high toggle that
-; advances the colour address, so a flat byte loop covers all 256 colours.
-; ---------------------------------------------------------------------------
 cgram_to_sram:
-    SEP #$20
-    LDA #$00
-    STA.l !cgadd
-    REP #$10
-    LDX #$0000
-.loop:
-    LDA.l !cgdatar
-    STA.l $760000,X
-    INX
-    CPX #$0200
-    BNE .loop
+    SEP #$30
+    LDA #$00 : STA.l !cgadd
+    LDA #$80 : STA.l $004310        ; DMAP: B->A, byte, one register
+    LDA #$3B : STA.l $004311        ; BBAD = $213B, CGRAM read
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$76 : STA.l $004314
+    REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
     RTS
 
 sram_to_cgram:
-    SEP #$20
-    LDA #$00
-    STA.l !cgadd
-    REP #$10
-    LDX #$0000
-.loop:
-    LDA.l $760000,X
-    STA.l !cgdataw
-    INX
-    CPX #$0200
-    BNE .loop
+    SEP #$30
+    LDA #$00 : STA.l !cgadd
+    LDA #$00 : STA.l $004310        ; DMAP: A->B, byte, one register
+    LDA #$22 : STA.l $004311        ; BBAD = $2122, CGRAM write
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$76 : STA.l $004314
+    REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
     RTS
