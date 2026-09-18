@@ -243,6 +243,33 @@ writes at `$80:B7BA`. It cannot be read back and restored, because `$4200` is
 write-only and there is nowhere in WRAM to stash it — WRAM is what is being
 overwritten.
 
+**WRAM-only is not safe if the player scrolls.** Measured: VRAM changes
+*within* a section, monotonically as the camera moves — 930 bytes different
+after 110 frames of moving right, 2,405 after 410, 2,665 after 550, out of
+65,536. That is tile streaming. So saving WRAM and restoring after scrolling
+leaves the restored state against the wrong tiles. The probe below is only
+sound if the player does not move between save and load, which is a fragile
+thing to rely on.
+
+**A selective save state looks feasible but its region set is not
+established.** Only about 1.5% of WRAM goes dirty during play, in a few 8KB
+regions, and `$7E:4000`-`$FFFF` — the level buffers loaded at section entry —
+appears static:
+
+| Region | Dirty after scrolling | Dirty after varied play |
+|--------|----------------------|-------------------------|
+| `$7E:0000`-`$1FFF` | 689 | 985 |
+| `$7E:2000`-`$3FFF` | — | 36 |
+| `$7F:A000`-`$BFFF` | 756 | 739 |
+| `$7F:E000`-`$FFFF` | 232 | 230 |
+
+The problem is the second column: `$7E:2000`-`$3FFF` only appeared once the
+test pressed more buttons. **Each test so far has found another region**, so
+the set cannot be trusted yet, and a missed region means silent corruption
+rather than a visible failure. Saving ~32KB of WRAM plus all 64KB of VRAM
+would be 96KB and fit inside snes9x's 128KB, but only on the assumption that
+the region list is complete.
+
 **Measured.** Save in area 1, move right for 170 frames, load. Zero page is
 byte-identical to the save immediately afterwards; whole-WRAM divergence bottoms
 at 178 bytes of 131,072 (0.14%) at a matched sampling offset, the residual being

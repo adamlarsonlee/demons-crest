@@ -48,10 +48,26 @@ deliverable. Don't propose emulator-side Lua features as the product.
   | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **no** — snes9x clamps |
 
   Going above 128KB means giving up the headless verification loop for this
-  feature and testing only on hardware or another emulator, which is a large
-  cost given that loop is how everything else here has been proven. The agreed
-  scope — restore within the same section — makes 128KB sufficient, so the
-  implemented probe stays at `$07`.
+  feature — unless another emulator can provide both.
+
+  **Mesen can.** It has a headless `--testrunner` mode that loads a ROM plus a
+  Lua script, runs at maximum speed until `emu.stop()`, and returns an exit
+  code, which is a genuine replacement for `tools/headless.py`'s loop. There is
+  also a Mesen-S **libretro core**, which may be a drop-in swap for the pinned
+  snes9x one, keeping the existing harness. **Mesen's own SRAM ceiling is
+  unverified** — the documentation does not state it, so it has to be measured
+  by running `src/asm/experiments/sram_probe.asm` against it.
+
+  That measurement is the decision point:
+
+  - If Mesen honours 256KB, save all of WRAM **and** all of VRAM, which is the
+    safe design, and keep headless verification. Best outcome.
+  - If it does not, choose between a selective save state whose region set is
+    unproven, and hardware-only testing.
+
+  Why this matters more than it first appeared: **VRAM changes within a
+  section** as the camera scrolls, so WRAM-only is not sound if the player
+  moves between save and load. See `docs/patches.md`.
 - **4MB expansion — approved in principle, not yet needed.** The playability
   conversation has happened and expansion is accepted when a feature requires
   it. It is not required yet, and doing it later costs nothing: hooks patch
