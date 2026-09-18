@@ -4,15 +4,16 @@
 ; Every change is described in plain language in docs/patches.md. Keep that
 ; document in step with this file.
 ;
-; Three changes:
+; Four changes:
 ;   1. A new game starts on the overworld with the Initial Stage beaten.
-;   2. Select+Start during gameplay exits the stage to the overworld.
-;   3. Entering a stage presets the Any% route progress for that stage.
+;   2. Entering a stage presets the Any% route progress for that stage.
+;   3. Select+Start during gameplay exits the stage to the overworld.
+;   4. Select+R saves a state, Select+L loads it.
 
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 4
+!version_minor = 5
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -34,9 +35,17 @@ practice_signature:
 !current_hp    = $7E1062
 !destination   = $7E1326        ; overworld destination index, load-time only
 !return_loc    = $7E0EA6        ; overworld return location, 0-15
-!pad_held_hi   = $7E0091        ; high byte of $0090; Select is bit 5
-!pad_new_hi    = $7E0095        ; high byte of $0094; Start  is bit 4
+!pad_held_hi   = $7E0091        ; high byte of $0090; Select $20, Start $10
+!pad_new_hi    = $7E0095        ; high byte of $0094; Start is bit 4
+!pad_new_lo    = $7E0094        ; low byte of $0094;  R is bit 4, L is bit 5
 !loop_flag     = $7E0086
+
+!inidisp       = $002100
+!vmain         = $002115
+!vmaddl        = $002116
+!vmdatalr      = $002139
+!cgadd         = $002121
+!nmitimen      = $004200
 
 !password_tail = $84C18F        ; the password path's setup phase
 !exit_entry    = $80BB07        ; the exit-area routine's real entry
@@ -50,6 +59,18 @@ assert read1($80B8F5) == $A9, "exit hook: expected LDA #$FF at $80:B8F5"
 assert read1($80BB07) == $29, "exit entry: expected AND #$0F at $80:BB07"
 assert read1($85B097) == $AD, "preset hook: expected LDA $1E50 at $85:B097"
 assert read1($85B09A) == $8D, "preset hook: expected STA $1062 at $85:B09A"
+assert read1($00FFD6) == $00, "header already declares a chipset"
+assert read1($00FFD8) == $00, "header already declares SRAM"
+
+; ---------------------------------------------------------------------------
+; Cartridge header: declare RAM so the save state has somewhere to live. Both
+; bytes are needed - a size with the chipset still saying "ROM only" is not
+; enough. $09 is 512 KB, the largest snes9x accepts; the state uses 192.5 KB.
+; ---------------------------------------------------------------------------
+org $00FFD6
+    db $02                      ; ROM + RAM + battery
+org $00FFD8
+    db $09
 
 ; ---------------------------------------------------------------------------
 ; 1. New game starts on the overworld
@@ -80,32 +101,46 @@ boot_hook:
     JML !password_tail
 
 ; ---------------------------------------------------------------------------
-; 2. Exit the current stage to the overworld
+; 3 and 4. Level-loop hotkeys
 ;
-; Replaces LDA #$FF / STA $0086 in the level gameplay loop. Select held plus
-; Start newly pressed hands control to the game's own exit-area routine. The
-; game computes pad edge detection itself at $0094, so this does not.
+; Replaces LDA #$FF / STA $0086 in the level gameplay loop, the only per-frame
+; site in task context. The NMI hook cannot serve: neither the exit nor the
+; state copy may run from inside an interrupt.
 ;
-; It also restores the route's final progress block, so the overworld offers
-; every stage again after an exit. See the comment at the restore loop.
+;   Select + Start   exit the stage to the overworld
+;   Select + R       save state
+;   Select + L       load state
+;
+; The game computes pad edge detection itself at $0094, so this does not.
 ; ---------------------------------------------------------------------------
 org $80B8F5
-    JSL exit_hook
+    JSL level_hook
     NOP
 
 freecode
-exit_hook:
+level_hook:
     ; The displaced instructions, run unconditionally.
     LDA #$FF
     STA.l !loop_flag
 
-    LDA.l !pad_new_hi
-    AND #$10                    ; Start newly pressed?
-    BEQ .no_hotkey
     LDA.l !pad_held_hi
     AND #$20                    ; Select held?
     BEQ .no_hotkey
 
+    LDA.l !pad_new_hi
+    AND #$10                    ; Start newly pressed?
+    BNE .exit
+    LDA.l !pad_new_lo
+    AND #$10                    ; R newly pressed?
+    BNE .save
+    LDA.l !pad_new_lo
+    AND #$20                    ; L newly pressed?
+    BNE .load
+.no_hotkey:
+    RTL
+
+; ---------------------------------------------------------------------------
+.exit:
     ; Consume Start so the crest/vellum screen does not also open.
     LDA.l !pad_new_hi
     AND #$EF
@@ -132,11 +167,140 @@ exit_hook:
     LDA.l !return_loc
     JML !exit_entry
 
-.no_hotkey:
+; ---------------------------------------------------------------------------
+.save:
+    PHB
+    JSR ss_prologue
+    REP #$30
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $70,$7E
+    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $71,$7E
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $72,$7F
+    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $73,$7F
+    SEP #$30
+    JSR vram_to_sram
+    JSR cgram_to_sram
+    JSR ss_epilogue
+    PLB
+    RTL
+
+.load:
+    PHB
+    JSR ss_prologue
+    REP #$30
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7E,$70
+    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7E,$71
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7F,$72
+    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7F,$73
+    SEP #$30
+    JSR sram_to_vram
+    JSR sram_to_cgram
+    JSR ss_epilogue
+    PLB
     RTL
 
 ; ---------------------------------------------------------------------------
-; 3. Preset the route progress for the stage being entered
+; Save-state support. SRAM layout, using the LoROM offset formula
+;   (((Address & $ff0000) >> 1) | (Address & $7fff)) & SRAMMask
+; so each bank from $70 owns a distinct 32 KB window:
+;
+;   WRAM $7E:0000-$7FFF <-> $70     VRAM $0000-$7FFF <-> $74
+;   WRAM $7E:8000-$FFFF <-> $71     VRAM $8000-$FFFF <-> $75
+;   WRAM $7F:0000-$7FFF <-> $72     CGRAM            <-> $76
+;   WRAM $7F:8000-$FFFF <-> $73                  = 192.5 KB of 512 KB
+;
+; NMI is off for the whole copy, because MVN is interruptible and an NMI
+; landing on a half-restored stack would push onto corrupt memory. Forced blank
+; makes VRAM and CGRAM accessible outside vblank. Neither $4200 nor $2100 can
+; be read back, so they are restored to $B1 and $0F, the values the game writes.
+;
+; PHB/PLB stay in the callers. A PHB before an RTS leaves the pushed bank byte
+; on top of the return address - the hazard CLAUDE.md records for the $80:821E
+; hook, which froze the game in an earlier version of this code.
+; ---------------------------------------------------------------------------
+ss_prologue:
+    SEP #$20
+    LDA #$00
+    STA.l !nmitimen
+    LDA #$8F
+    STA.l !inidisp
+    RTS
+
+ss_epilogue:
+    SEP #$30
+    LDA #$0F
+    STA.l !inidisp
+    LDA #$B1
+    STA.l !nmitimen
+    RTS
+
+; VRAM and CGRAM move by DMA on channel 1, following RockmanX2Practice. Three
+; details matter, all of which a hand-written loop got wrong first: VMAIN must
+; be $00 so the address increments after the LOW byte, VMADD takes WORD
+; addresses so the second half is $4000, and the dummy read of $2139 after
+; setting VMADD is required.
+;
+; Register packing: a 16-bit store to $4312 sets A1T low and high, to $4314 the
+; A bank and DAS low, to $4315 DAS low and high. DAS $8000 is one SRAM window.
+vram_to_sram:
+    SEP #$30
+    LDA #$00 : STA.l !vmain
+    LDA #$81 : STA.l $004310        ; DMAP: B->A, word, two registers
+    LDA #$39 : STA.l $004311        ; BBAD = $2139, VRAM read
+    REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
+    LDA.l !vmdatalr                 ; required dummy read
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$74 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
+    LDA.l !vmdatalr
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$75 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    RTS
+
+sram_to_vram:
+    SEP #$30
+    LDA #$00 : STA.l !vmain
+    LDA #$01 : STA.l $004310        ; DMAP: A->B, word, two registers
+    LDA #$18 : STA.l $004311        ; BBAD = $2118, VRAM write
+    REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$74 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$75 : STA.l $004314
+    REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    RTS
+
+cgram_to_sram:
+    SEP #$30
+    LDA #$00 : STA.l !cgadd
+    LDA #$80 : STA.l $004310        ; DMAP: B->A, byte, one register
+    LDA #$3B : STA.l $004311        ; BBAD = $213B, CGRAM read
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$76 : STA.l $004314
+    REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    RTS
+
+sram_to_cgram:
+    SEP #$30
+    LDA #$00 : STA.l !cgadd
+    LDA #$00 : STA.l $004310        ; DMAP: A->B, byte, one register
+    LDA #$22 : STA.l $004311        ; BBAD = $2122, CGRAM write
+    REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
+    LDA #$76 : STA.l $004314
+    REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
+    LDA #$02 : STA.l $00420B
+    RTS
+
+; ---------------------------------------------------------------------------
+; 2. Preset the route progress for the stage being entered
 ;
 ; Replaces LDA $1E50 / STA $1062 at the very start of the level-load entry.
 ; Reads the overworld destination and writes that stage's Any% block before any

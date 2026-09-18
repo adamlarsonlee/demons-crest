@@ -5,6 +5,76 @@ Practice ROM and research tooling for Demon's Crest / Demon's Blazon (SNES).
 Targets the **Japanese** release. The RAM map in `memory-map/README.md` is
 JP-only; the English ROM has different mappings.
 
+## Using the practice ROM
+
+### Controls
+
+All three hotkeys work during gameplay in a stage, and all use **Select** as the
+modifier so nothing collides with normal play.
+
+| Buttons | Effect |
+|---------|--------|
+| **Select + Start** | Leave the current stage for the overworld. No death, no animation, no HP loss. The crest/vellum screen does not open — the Start press is consumed. |
+| **Select + R** | Save state |
+| **Select + L** | Load the saved state |
+
+### Starting a new game
+
+A new game goes **straight to the overworld map with the Initial Stage already
+beaten** — Somulo, Hippogriff and Arma are done, so you start with the Earth
+Crest and two HP upgrades. No intro stage to sit through.
+
+You start with the route's **final** progress — Earth Crest, Claw, Tornado and
+four HP upgrades — so that **every stage on the route is available on the map**,
+the castle included. The castle is otherwise hidden until Flier is dead.
+
+You never actually play with that state. When you enter a stage, the ROM
+overwrites your progress with what a runner would have **at that point in the
+route**, and when you leave, it restores the full set so the map is complete
+again.
+
+### Per-stage progress
+
+Pick a stage by flying to it on the overworld as normal — there is no
+stage-select menu. Whatever you enter, you arrive with the correct route state:
+
+| Stage entered | You have | Max HP |
+|---------------|----------|--------|
+| Stage 1 (revisit) | the Somulo HP upgrade | 5 |
+| Town | Earth Crest, 2 HP upgrades | 6 |
+| Forest | Earth Crest, 4 HP upgrades | 8 |
+| Tower | + Tornado | 8 |
+| Castle | + Claw | 8 |
+
+The Any% route is Initial Stage → Town → Forest → Tower → Castle; see
+`docs/route-any.md`. Entering the castle with route progress also gets you the
+**Any% castle room**, not the late-game castle section that Any% never reaches.
+
+Stages the route does not visit are left alone — you keep whatever progress you
+had, which may not make sense for that stage. That is deliberate.
+
+### Save states
+
+Saves all of WRAM, all of VRAM and CGRAM, so the picture comes back as well as
+the game state. Verified to restore byte-for-byte after scrolling away.
+
+**Scope: the same section only.** Save and load in one place, for retrying a
+jump or a boss. Saving in one area and loading in another is not supported and
+has not been tested.
+
+### Things to expect
+
+- **The screen blanks for about a third of a second** on each save and load.
+  That is the copy running with the screen off; it is not a crash.
+- **Exiting drops you at the map origin**, not above the stage you left, so you
+  have to fly back. Known, see `docs/route-any.md`.
+- **Progress picked up inside a stage is discarded when you leave.** Every
+  attempt starts from the canonical route state, which is the point — but it
+  means this ROM is not suitable for an actual playthrough.
+- **Practising the Somulo fight is not possible** through the stage select. It
+  only exists on a fresh start that has not had the intro skipped, and the ROM
+  always skips it.
+
 ## Layout
 
 | Path | Contents |

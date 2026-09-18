@@ -23,12 +23,13 @@ Conventions used throughout:
 | Boot to the overworld with route progress | `patch.asm` | **works** |
 | Exit a stage to the overworld on a hotkey | `patch.asm` | **works**, validated on hardware |
 | Per-stage route presets on entry | `patch.asm` | **works** |
-| Save / load state within a section | `savestate_probe.asm` | **works**, not yet in `patch.asm` |
+| Save / load state within a section | `patch.asm` | **works** |
 | Kill Firebrand on a hotkey | `death_probe.asm` | **fails**, kept as a negative result |
 | Exit from the intro stage | `boot_exit_combo.asm` | **fails**, kept as a negative result |
 
-All three working changes are in `src/asm/patch.asm`, so plain `make rom`
-builds the practice ROM. The two failures stay in `src/asm/experiments/` as
+All four working changes are in `src/asm/patch.asm`, so plain `make rom` builds
+the practice ROM. The exit and save-state hotkeys share the `$80:B8F5` slot and
+are dispatched by one handler. The two failures stay in `src/asm/experiments/` as
 recorded negative results.
 
 Verified on the combined build: a new game reaches the overworld with
