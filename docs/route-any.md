@@ -102,6 +102,31 @@ So every route block from Town onward already sets the bit — Town's `$1E54` is
 `$03` — and boots to the overworld for free. A starting block for "Initial
 Stage beaten" is exactly the Town row.
 
+### Area 0 is the Somulo fight only, and is not re-enterable
+
+Measured, because it changes what "practise the Initial Stage" can mean.
+
+| How entered | `$8D` | Area | What is on screen |
+|---|---|---|---|
+| `$1E54` bit 0 clear, pre-overworld | `$00` | 0, Somulo arena | purple stone hall, fire-breathing gargoyle face, columns |
+| destination 0 from the overworld, Somulo already beaten | `$02` | 1, S1_1 | swamp with dead trees, torches, ghost enemies |
+
+So **area 0 is reachable only on the first visit.** Re-entering through the
+destination table gives area 1, an entirely different place. `docs/areas.md`
+listing both `0 Somulo arena` and `17 Somulo exit` fits the Initial Stage being
+the Somulo fight plus an exit section, separate from the S1_1-S1_3 sections you
+return to.
+
+The consequence for the practice ROM: offering "Initial Stage" as a stage-select
+entry would **not** give the Somulo fight. Practising that specific fight needs
+a new game with `$1E54` bit 0 clear, which is the one case where booting to the
+overworld is the wrong behaviour.
+
+**Not established:** stage 1's section layout. Holding Right for 700 frames in
+area 1 never changed `$8D`, though Firebrand did move — the section is either
+long or he was blocked or fighting — so no transition to areas 2, 3 or 17 was
+observed.
+
 **Still to find:** where a *new game* initialises `$1E50`-`$1E58`, so the
 practice ROM can write a route block there instead of zeros. The password path
 writes the block just before `$84:C182`; a new game presumably has its own

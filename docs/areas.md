@@ -27,6 +27,16 @@ level-section index rather than a level plus a separate section value. There are
 
 So the two areas measured here are **index 2 = S1_2** and **index 7 = S2_3b**.
 
+## Area 0 versus area 1
+
+Area 0 (`Somulo arena`) is reachable **only on the pre-overworld first visit**,
+when `$1E54` bit 0 is clear. Entering through destination 0 from the overworld
+gives **area 1** (`S1_1`) instead, which is a visibly different place — a swamp
+with dead trees rather than area 0's purple stone hall. Measured; see
+`docs/route-any.md`. The separate `17 Somulo exit` entry is consistent with the
+Initial Stage being the Somulo fight plus an exit, distinct from the S1_1-S1_3
+sections revisited later.
+
 ## Additions from the destination table
 
 `$81:E0F1` (JP) is the 13-entry overworld destination table; see `docs/recon.md`.
