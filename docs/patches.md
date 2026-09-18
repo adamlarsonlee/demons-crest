@@ -39,7 +39,7 @@ Select+Start in area 1 reaches the overworld. The diff against the original is
 
 ---
 
-## 1. Boot to the overworld — `boot_password.asm`
+## 1. Boot to the overworld — `patch.asm`
 
 **What the player sees.** Starting a new game goes straight to the overworld
 map with the Initial Stage already beaten: max HP 6, the Earth Crest, two HP
@@ -82,7 +82,7 @@ resets the stack pointer from `$0034,Y`.
 
 ---
 
-## 2. Exit a stage to the overworld — `exit_probe.asm`
+## 2. Exit a stage to the overworld — `patch.asm`
 
 **What the player sees.** Holding Select and pressing Start during gameplay
 leaves the current stage for the overworld, with no death, no animation, no HP
@@ -148,14 +148,6 @@ player's own progress.
 One implementation note: the copy needs two independent indices, one into the
 table and one into the block, and the 65816 has no `STA long,Y`. So it sets
 `DB` to `$7E` and uses `absolute,Y` for the stores, restoring `DB` afterwards.
-
-**Original behaviour.** Entering any stage from the overworld gives the
-progress a runner would have at that point in the route, so no stage-select
-menu is needed — the player picks a stage by flying to it.
-
-**Planned site.** `$85:B097`, the first instruction of the level-load entry.
-The hook would read the destination from `$26` (direct page, `D = $1300`), look
-it up in a table, and write that stage's block to `$1E50`-`$1E58`.
 
 **Why that exact instruction.** The order downstream matters:
 
