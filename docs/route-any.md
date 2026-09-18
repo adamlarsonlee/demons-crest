@@ -303,10 +303,35 @@ intro on a fresh start needs the dispatch changed too, not just progress.
    to `$80:829B` from `$04` to `$10`. Cleanest, but the site is not yet
    located — `$84:8570` looked like it and is gated on the Earth Crest, which
    the written block already satisfies, so it is not the one that ran.
-2. Reuse the proven exit. Let the new game start in area 0 and have the level
-   hook jump to `$80:BB07` once, bouncing straight out to the overworld.
-   Uses only mechanisms already verified, at the cost of a frame or two in
-   area 0.
+2. Reuse the proven exit — let the new game start in area 0 and exit from it.
+   **Attempted and not working; see below.**
+
+### Option 2 attempted: the exit does not work from area 0
+
+`src/asm/experiments/boot_exit_combo.asm` combines the boot hook with the exit
+hotkey. The boot half works: a new game starts carrying
+`06 10 00 00 03 00 00 00 00`, max HP 6 with the Earth Crest, confirmed on screen
+in the Somulo arena. The exit half never fires, through three attempts:
+
+| Attempt | Result |
+|---|---|
+| Level-loop hook at `$80:B8F5` | Never runs in area 0. `$0086`, which the hook writes every frame, stayed `$00`, and `$0073` is incremented at `$80:A90B` there rather than `$80:B8FA`. |
+| Hook `$80:A8EE` (`LDA $00F9 / CMP #$1A`) in the intro loop | Never runs either — a marker at `$7F:C700` stayed `$00`, so the loop branches around that path. |
+| Hook `$80:A90B` (`INC $0073`), the site the watch actually observed | Runs — `$0073` advances, and the game does not hang — but the hotkey branch is never taken, with either an edge test on `$0094` or a held test on `$0090`. |
+
+The likely reason the last one fails is cadence: `$0073` advances 152 times
+across 1338 frames in area 0, about once every nine frames. A one-frame edge at
+`$0094` would nearly always be missed, but a *held* test should not be, so the
+model of area 0 is wrong in some further way. `$80:A90B` is the only site that
+touches `$0073` during the intro, so either that loop is a wait or cutscene loop
+and area 0's real per-frame path does not use `$0073`, or the hook is running in
+a context where the pad words are not what they are elsewhere.
+
+**Unresolved. Area 0's loop structure needs mapping properly** — the same
+treatment `$0073` gave the level loop, but against something area 0 actually
+updates every frame — before either option can be finished. Option 1, locating
+the new-game dispatch and passing `$10` instead of `$04`, is untouched and may
+now be the shorter path.
 
 ### `$0EA6` is a table lookup
 
