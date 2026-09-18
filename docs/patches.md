@@ -20,15 +20,22 @@ Conventions used throughout:
 
 | Change | File | State |
 |--------|------|-------|
-| Boot to the overworld with route progress | `boot_password.asm` | **works** |
-| Exit a stage to the overworld on a hotkey | `exit_probe.asm` | **works**, validated on hardware |
-| Per-stage route presets on entry | not written | designed, see `route-any.md` |
+| Boot to the overworld with route progress | `patch.asm` | **works** |
+| Exit a stage to the overworld on a hotkey | `patch.asm` | **works**, validated on hardware |
+| Per-stage route presets on entry | `patch.asm` | **works** |
 | Kill Firebrand on a hotkey | `death_probe.asm` | **fails**, kept as a negative result |
 | Exit from the intro stage | `boot_exit_combo.asm` | **fails**, kept as a negative result |
 
-Nothing is in `src/asm/patch.asm` yet — everything is a separate experiment
-built with `make rom ASM=src/asm/experiments/<file>.asm`. Combining them is a
-pending step.
+All three working changes are in `src/asm/patch.asm`, so plain `make rom`
+builds the practice ROM. The two failures stay in `src/asm/experiments/` as
+recorded negative results.
+
+Verified on the combined build: a new game reaches the overworld with
+`06 10 00 00 03 00 00 00 00`; entering destination 2 gives area 10 with the
+Forest block; entering destination 6 gives **area 42** with the Castle block,
+from an all-items save, which is the ordering constraint working; and
+Select+Start in area 1 reaches the overworld. The diff against the original is
+200 bytes across four hook sites plus injected code and the checksum.
 
 ---
 
@@ -122,9 +129,27 @@ parked; see `route-any.md`.
 
 ---
 
-## 3. Per-stage route presets — designed, not written
+## 3. Per-stage route presets — `patch.asm`
 
-**Intended behaviour.** Entering any stage from the overworld gives the
+**What the player sees.** Entering any stage from the overworld gives the
+progress a runner would have at that point in the route. No stage-select menu:
+the player picks a stage by flying to it.
+
+**Where.** `$85:B097`, the first instruction of the level-load entry. Six bytes
+of `LDA $1E50 / STA $1062` replaced by a `JSL` plus two `NOP`s.
+
+**What the injected code does.** Reads the destination from `$1326`, and if it
+is 0-6 and has a route entry, copies that stage's nine-byte block over
+`$1E50`-`$1E58`. Then reproduces the displaced `LDA $1E50 / STA $1062`, which
+now picks up whatever block is in place. Destinations without a route entry
+(4 and 5) are left untouched, so stages the route never visits keep the
+player's own progress.
+
+One implementation note: the copy needs two independent indices, one into the
+table and one into the block, and the 65816 has no `STA long,Y`. So it sets
+`DB` to `$7E` and uses `absolute,Y` for the stores, restoring `DB` afterwards.
+
+**Original behaviour.** Entering any stage from the overworld gives the
 progress a runner would have at that point in the route, so no stage-select
 menu is needed — the player picks a stage by flying to it.
 
