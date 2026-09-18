@@ -265,9 +265,64 @@ Write a starting block with `$1E54` bit 0 set. The game's own gate at
 `$84:C1EF` then sends a new game to the overworld instead of the Initial Stage.
 Setting that single bit is the whole feature.
 
-**Hook site not yet found** — wherever a new game initialises `$1E50`-`$1E58`.
-The password path writes the block just before `$84:C182`; a fresh start
-presumably has its own init.
+**Hook site found, and the block write works — but the bit alone is not
+enough.** `src/asm/experiments/boot_overworld.asm` hooks it and is verified to
+produce the intended state; a new game still starts in area 0.
+
+The new-game progress init is `$84:88DE`, reached from a `JSL` stub at
+`$84:8550`:
+
+```
+$84:88E2  STZ $008D      ; area 0, hardcoded
+$84:88E8  STZ $1E51      ; ... through $1E57
+$84:8906  LDA #$04       <- 5-byte hook slot
+$84:8908  STA $1E50      ; max HP 4
+$84:890F  (second init part, called separately from $84:856B)
+$84:8919  RTS
+```
+
+Hooking `$84:8906` and writing the Town block gives exactly
+`06 10 00 00 03 00 00 00 00`, max HP 6 with the Earth Crest — measured. But
+`$8D` is still `$00`, so the game starts in the Somulo arena regardless.
+
+**Why: a new game never reaches the `$84:C1EF` gate.** That gate is on the
+*password* path only. Two different tests for "has the intro been finished"
+exist:
+
+| Path | Test | Effect |
+|------|------|--------|
+| password apply, `$84:C1EF` | `$1E54` bit 0 (Somulo HP-up) | overworld, else area 0 |
+| `$84:8557` | `$1E51` bit 4 (**Earth Crest**) plus an area check | keeps you in the intro when absent |
+
+and separately `$84:88E2` writes `$8D = 0` unconditionally. So skipping the
+intro on a fresh start needs the dispatch changed too, not just progress.
+
+**Options, none implemented:**
+
+1. Find what dispatches a new game into area 0 and change the state it passes
+   to `$80:829B` from `$04` to `$10`. Cleanest, but the site is not yet
+   located — `$84:8570` looked like it and is gated on the Earth Crest, which
+   the written block already satisfies, so it is not the one that ran.
+2. Reuse the proven exit. Let the new game start in area 0 and have the level
+   hook jump to `$80:BB07` once, bouncing straight out to the overworld.
+   Uses only mechanisms already verified, at the cost of a frame or two in
+   area 0.
+
+### `$0EA6` is a table lookup
+
+Answering the earlier open question: the second init part derives it from the
+area.
+
+```
+$84:892C  LDA $008D      ; area x 2
+$84:892F  LSR A
+$84:8930  TAX
+$84:8931  LDA $9B80,X    ; area -> overworld location
+$84:8934  STA $0EA6
+```
+
+So `$0EA6` is `table[area]`, which is why it looked neither area-independent nor
+like a counter — it is per-area, but only updated when this init runs.
 
 ### 2. Level entry: write the route block for the destination
 
