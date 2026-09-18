@@ -206,6 +206,9 @@ Keep these current — they are the project's memory:
 - `docs/references.md` — reference practice ROMs, what each contributes, and
   where their approach does not transfer
 - `docs/route-any.md` — the Any% route and the state block for each stage entry
+- `docs/patches.md` — **every change the ROM makes to the original, in plain
+  language**: hook site, original bytes, what the injected code does and why
+  that site. Update it in the same commit as any hook change
 - `memory-map/README.md` — the canonical RAM map
 
 Record negative results. Knowing what an address *isn't* is worth as much as

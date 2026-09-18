@@ -12,9 +12,9 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000036 |2|Unsigned|Task state index x 2|`$0036,Y`. Indexes the dispatch table at `$80:82C3`; `$04` is the level, `$10` the overworld. Writing it directly is unreliable - see `docs/recon.md`
 |000070 |2|Unsigned|Scheduler scratch, caller stack pointer|Saved with `TSC` at `$80:81CC`, restored at `$80:82BA`
 |000072 |1|Unsigned|Current task index|The `Y` used for every `$0030`-`$0036` task field
-|00008D |1|Unsigned|Current area ID **x 2**|Halve it for the `docs/areas.md` index. Reads `$BC` on the overworld, which is a mode marker and not an area
 |000073 |1|Unsigned|Frame counter|Incremented once per frame by whichever mode loop is running: `$80:AFF0` on the overworld, `$80:B8FA` in a level. Zeroed by level setup at `$80:B821`
 |000086 |1|Unsigned|Set to $FF each frame by the level loop|Written at `$80:B8F7`; purpose unidentified
+|00008D |1|Unsigned|Current area ID **x 2**|Halve it for the `docs/areas.md` index. Reads `$BC` on the overworld, which is a mode marker and not an area
 |000090 |2|Binary|Controller 1 held|Standard layout: B $8000, Y $4000, Select $2000, Start $1000, Up $0800, Down $0400, Left $0200, Right $0100, A $0080, X $0040, L $0020, R $0010
 |000092 |2|Binary|Controller 1 held, previous frame|
 |000094 |2|Binary|Controller 1 newly pressed|Edge computed by the game in NMI at `$80:8374`; set for exactly one frame
@@ -25,6 +25,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000300 |512|-|CGRAM shadow|256 colours, loaded verbatim from ROM bank `$99` at `$99:AB40 + id x $C0`. `$7F:A000` holds a second copy
 |000E54 |2|Unsigned|Level loop exit condition|`$80:B8FD` leaves the gameplay loop when `$0E54 | $0E55` is non-zero
 |000E56 |1|Unsigned|Current area ID x 2, second copy|Written alongside `$8D` at `$85:B0C2`
+|000EA6 |1|Unsigned|Overworld return location (0-15)|Passed in `A` to the exit routine `$80:BB07`, which ANDs it with `$0F` and stores it here. Derived from the area by `$84:892C`: `LDA $8D / LSR A / TAX / LDA $9B80,X`. Only refreshed when that init runs, which is why it looks neither area-determined nor like a counter across dumps
 |000EA7 |1|Unsigned|Per-area value from `$81:E182`|Written at `$85:B0C8` on level entry; meaning unidentified
 |001031 |2|Unsigned|Horizontal Position (Coarse)
 |001034 |2|Unsigned|Vertical Position (Coarse)
@@ -33,6 +34,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001062 |1|Unsigned|Current HP (units)|Set from `$1E50` on level load at `$85:B09D` and on respawn at `$84:8524`
 |001063 |2|Unsigned|Zam
 |001326 |2|Unsigned|Overworld destination index (load-time only)|Confirmed scratch outside the load: nine overworld dumps read `$700`, `$800` or `$900`, so the destination under the cursor cannot be recovered from a dump. |
+|001D50 |1|Unsigned|Incremented once per level load|`INC $1D50` at `$80:B821` during level setup; purpose unidentified
 |001DFA |30|Unsigned|Overworld position block|`$1DFA`-`$1E17`, mirrored at `$7F:F6E0`. `$1DFA`-`$1E01` are parallax scroll values in 3:2:1 ratios, and since Firebrand is screen-fixed the scroll is the position. Preserved across a level visit, then cleared by the loop at `$85:9974` during overworld setup - which is why a hotkey exit lands at the map origin
 |001E30 |1|Unsigned|Scroll 1 Contents|
 |001E31 |1|Unsigned|Scroll 2 Contents|
@@ -50,6 +52,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E52	|1|Binary|Ultimate - Jar 2|Again, bits are mapped to menu selections (0000 0001 is Ultimate, 1000 0000 is jar 2)
 |001E53	|1|Binary|Jar 3 - Talismans|Same story
 |001E54	|2|Binary|Max HP+ / Initial Stage gate|**Bit 0 doubles as "Initial Stage beaten"**: `$84:C1EF` sends a password or new-game load to the overworld when it is set and into area 0, the Somulo arena, when it is clear. Somulo is that stage's boss. |Each bit is mapped to a specific max health increase pickup, not sure yet which bits map to which drop but 0000 0000 0000 0001 is Somulo, obviously
+|001E55 |1|Binary|Max HP+, high byte|The upper half of the 16-bit field at `$1E54`. Listed separately because route state blocks set bits here: the game uses `$07` in `$1E54` plus `$01` in `$1E55` after Town
 |001E56	|1|Binary|Progress flags (boss/stage)|Not previously mapped. Found by diffing password-loaded saves; goes 81 -> FF as the game is completed
 |001E57	|1|Binary|Progress flags, continued|Only the low two bits are used
 |001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
