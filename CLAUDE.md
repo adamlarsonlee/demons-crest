@@ -205,6 +205,7 @@ Keep these current — they are the project's memory:
 - `docs/passwords.md` — working passwords and how to enter them headlessly
 - `docs/references.md` — reference practice ROMs, what each contributes, and
   where their approach does not transfer
+- `docs/route-any.md` — the Any% route and the state block for each stage entry
 - `memory-map/README.md` — the canonical RAM map
 
 Record negative results. Knowing what an address *isn't* is worth as much as
