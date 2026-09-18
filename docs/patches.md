@@ -219,13 +219,22 @@ $7F:8000-$FFFF  <->  $73:0000-$7FFF
 **Why WRAM only, no VRAM.** 128 KB is exactly WRAM's size, so there is no room
 for VRAM beside it. That is affordable only because of the agreed scope:
 restoring within the same section means VRAM already holds the right graphics.
-X2 saves VRAM because its states are general.
+
+X2 does save VRAM and CGRAM as well, in a 512 KB window. **Why it does is not
+documented** — its readme says only "Press Select+R to save your current state.
+Press Select+L to load it", with no stated limitation. It may need them for
+restores that cross areas, or it may simply save everything as the safe option.
+Do not treat "X2 needed VRAM" as established.
 
 **Why the stack survives.** Restoring WRAM overwrites the stack in use. That is
 safe only because save and load happen at the *same hook site* — `SP` and our
 own return address are identical both times, so the bytes written over the
-stack are the bytes already there. A general save state cannot rely on this;
-X2 keeps a separate saved `SP`.
+stack are the bytes already there.
+
+X2 instead keeps a separate `sram_saved_sp`, which is solid evidence that its
+load can happen at a different point in the program than its save. That
+difference is real, unlike the VRAM question above: a saved `SP` has no purpose
+unless the site can differ.
 
 **Why NMI is masked.** `MVN` is interruptible between iterations, and an NMI
 firing while the stack is half-restored would push onto corrupt memory. `$4200`
@@ -242,6 +251,12 @@ Firebrand back at his saved position.
 
 **Not in `patch.asm` yet** — it shares the `$80:B8F5` slot with the exit hook,
 so the two need merging into one handler.
+
+**Caution from X2's history.** Its version log reads "1.20 Added Total's saved
+state code" then "1.21 Rewrote the saved state code to be much more stable".
+The save state was the feature that gave a more experienced hack trouble, and
+it was credited to different people than the rest of the hack. Ours passes its
+first test, which is not the same as being stable.
 
 ---
 

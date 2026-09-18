@@ -38,6 +38,12 @@ game's live state at `$7E:1FA0` with `MVN`. One table per supported route. This
 is exactly the shape the Demon's Crest route states need, with `$1E50`-`$1E58`
 as the destination instead.
 
+**A caution, from the version history.** "1.20 Added Total's saved state code"
+followed by "1.21 Rewrote the saved state code to be much more stable". The save
+state needed a stability rewrite in a hack that was otherwise mature, and it is
+credited to different contributors than the rest. Treat a save state that works
+once as unproven.
+
 **Quick death by writing a state variable, not by jumping.** It checks
 `current_play_state` (`$7E:00D2`) is the normal value, then writes the death
 value to it and to `countdown_play_state` (`$7E:00D6`). A data write, so the
