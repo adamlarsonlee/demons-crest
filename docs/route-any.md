@@ -33,6 +33,7 @@ derived from the HP-up count rather than supplied.
 | Stage entered | Destination (`$1326`) | Area (`$8D`/2) | `$1E50`-`$1E58` | Max HP | Items |
 |---|---|---|---|---|---|
 | Initial Stage | — (before the overworld) | 0 (Somulo arena) | `04 00 00 00 00 00 00 00 00` | 4 | none |
+| Stage 1, first visit | — (mid Initial Stage) | 1 (S1_1) | `05 00 00 00 01 00 00 00 00` | 5 | Somulo HP-up only |
 | Town | 1 | 4 (S2 Town) | `06 10 00 00 03 00 00 00 00` | 6 | Earth Crest, 2 HP-ups |
 | Tower | 3 *(inferred)* | 18 (S4_1) | `08 10 00 00 0F 00 00 00 00` | 8 | Earth Crest, 4 HP-ups |
 | Forest | 2 | 10 (S3_1) | `08 14 00 00 0F 00 00 00 00` | 8 | + Claw |
@@ -43,6 +44,14 @@ Reproduce any row with, for example:
 ```sh
 python3 tools/state.py encode EarthCrest Claw Tornado HPUp1 HPUp2 HPUp3 HPUp4
 ```
+
+The **stage 1 first visit** row exists because Somulo is fought at the start of
+the Initial Stage and drops the first HP up, so the rest of that stage is played
+with `$1E54` bit 0 already set and max HP 5. That is a different state from both
+the pre-Somulo start (`$1E54 = 00`, max HP 4) and the later revisit, and it is
+the state to preset for practising the stage rather than the boss. Note it is
+the same bit that the boot gate reads, so a block with only this bit set both
+skips the intro *and* represents having just beaten Somulo.
 
 Which HP-up bits are used does not matter to the game, only how many: max HP is
 `4 + popcount($1E54, $1E55)`. `HPUp1` upward is chosen for readability.
