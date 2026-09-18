@@ -3,7 +3,7 @@
 ## The goal
 
 An **Any% practice ROM** for Demon's Crest that runs on **real SNES hardware**
-via FXPak Pro, modelled on `Myriachan/RockmanXPractice`. Practice features are
+via SD2SNES, modelled on `Myriachan/RockmanXPractice`. Practice features are
 baked into the ROM as 65816 assembly, not provided by an emulator.
 
 Everything else in this repo — the Lua HUD, the headless harness, the
