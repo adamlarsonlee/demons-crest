@@ -5,6 +5,25 @@ Practice ROM and research tooling for Demon's Crest / Demon's Blazon (SNES).
 Targets the **Japanese** release. The RAM map in `memory-map/README.md` is
 JP-only; the English ROM has different mappings.
 
+## Getting it
+
+There is no downloadable ROM and there never will be. Distribution is an **IPS
+patch** you apply to your own dump of the Japanese release; `make dist` builds
+the folder that gets handed to players:
+
+```sh
+make dist      # -> build/dist/ and build/DemonsCrestPractice.zip
+```
+
+That folder holds the patch, `apply.py`, the expected hashes and `PATCHING.md`,
+which is written for someone who has never patched a ROM. Applying the patch
+needs no toolchain and no container — just an IPS patcher, or Python 3 for
+`apply.py`, which verifies the source ROM, strips a copier header if present and
+checks the patched result against a known-good hash.
+
+The player-facing `README.md` in that folder is generated from the section
+below, so the two cannot drift apart.
+
 ## Using the practice ROM
 
 ### Controls
@@ -97,6 +116,7 @@ Requires `asar` (`brew install asar`) and Python 3. Supply your own ROM dump at
 make verify   # identify the ROM, pin its hash, emit the asar mapping include
 make rom      # build build/DemonsBlazon_Practice.sfc
 make patch    # emit a distributable IPS patch
+make dist     # assemble the player folder and zip
 ```
 
 `make verify` pins the source ROM's SHA-1 to `rom.lock` so later builds fail
@@ -110,6 +130,7 @@ mounted read-only and never enters the image.
 ```sh
 make docker-image   # one-time
 make docker-rom
+make docker-dist    # patch + player folder + zip
 make docker-shot    # capture frames to build/frames as PNG
 make docker-shell   # interactive
 ```

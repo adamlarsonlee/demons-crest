@@ -10,3 +10,7 @@ rom.lock
 
 # Save states are derived from the ROM.
 states/
+
+# Python bytecode caches.
+__pycache__/
+*.pyc
