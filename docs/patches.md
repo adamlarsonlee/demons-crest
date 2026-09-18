@@ -263,12 +263,41 @@ appears static:
 | `$7F:A000`-`$BFFF` | 756 | 739 |
 | `$7F:E000`-`$FFFF` | 232 | 230 |
 
-The problem is the second column: `$7E:2000`-`$3FFF` only appeared once the
-test pressed more buttons. **Each test so far has found another region**, so
-the set cannot be trusted yet, and a missed region means silent corruption
-rather than a visible failure. Saving ~32KB of WRAM plus all 64KB of VRAM
-would be 96KB and fit inside snes9x's 128KB, but only on the assumption that
-the region list is complete.
+Enumerating individual dirty regions proved unreliable — `$7E:2000`-`$3FFF`
+only appeared once a test pressed more buttons, so each test found another one.
+**Measuring by half instead is conclusive.** Over 2,050 frames of heavily
+varied play in area 1 — every button, all directions, attacking:
+
+| WRAM half | Dirty at frame 800 / 1500 / 2240 |
+|-----------|----------------------------------|
+| `$7E:0000`-`$7FFF` | 635 / 858 / 1061 |
+| `$7E:8000`-`$FFFF` | **0 / 0 / 0** |
+| `$7F:0000`-`$7FFF` | **0 / 0 / 0** |
+| `$7F:8000`-`$FFFF` | 899 / 997 / 987 |
+
+Not one byte changed in the two static halves, which is consistent with them
+holding the level buffers loaded once at section entry. So a save state of the
+two **dynamic** halves plus all of VRAM is 128KB exactly:
+
+```
+WRAM $7E:0000-$7FFF  ->  SRAM $70
+WRAM $7F:8000-$FFFF  ->  SRAM $71
+VRAM $0000-$7FFF     ->  SRAM $72
+VRAM $8000-$FFFF     ->  SRAM $73
+```
+
+That covers **all** of VRAM with no guessing, covers both dynamic WRAM halves
+in full, and fits the snes9x ceiling so it stays verifiable. The exclusion is
+measured, not assumed. Caveat: measured in area 1 only — worth repeating in
+another area before relying on it.
+
+**The hard part is VRAM access, not the size.** VRAM cannot be reached with
+`MVN`; it is only addressable through the PPU (`$2116`/`$2117` address,
+`$2139`/`$213A` read, `$2118`/`$2119` write), which needs forced blank, the
+read-prefetch quirk and probably DMA to be fast enough. That code is new and
+unverified, which is exactly why it matters that this design fits 128KB: a
+256KB version could not be smoke-tested at all, because snes9x would silently
+truncate the SRAM and the writes past 128KB would go nowhere.
 
 **Measured.** Save in area 1, move right for 170 frames, load. Zero page is
 byte-identical to the save immediately afterwards; whole-WRAM divergence bottoms
