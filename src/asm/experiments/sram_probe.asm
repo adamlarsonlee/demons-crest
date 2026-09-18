@@ -25,4 +25,4 @@ warnings disable Wfreespace_leaked
 assert read1($00FFD8) == $00, "header already declares SRAM"
 
 org $00FFD8
-    db $07
+    db $08

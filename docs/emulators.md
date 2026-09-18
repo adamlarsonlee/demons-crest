@@ -45,6 +45,43 @@ after 60 seconds.
 Mesen's Lua API is real and rich, but reaching it requires the GUI, which is not
 automation.
 
+## SRAM is not writable in this harness at all
+
+Worse than the size limit, and found only after writing the save-state code:
+**the CPU cannot reach SRAM in the pinned snes9x core.** Measured with
+`src/asm/experiments/sram_where.asm`, which writes a distinct four-byte marker
+to each candidate window from a hook whose execution is confirmed (`$7E:0086`
+reads `$FF`):
+
+| Write target | Appears in SAVE_RAM |
+|--------------|---------------------|
+| `$70:0000` | no |
+| `$70:8000` | no |
+| `$71:0000` | no |
+| `$F0:0000` | no |
+| `$30:6000` | no |
+| `$B0:6000` | no |
+
+Meanwhile `retro_get_memory_size(SAVE_RAM)` reports 131,072 bytes, and that
+buffer is uniformly `$60` and never changes. So snes9x allocates an SRAM buffer
+but does not map it into the CPU address space for this cartridge.
+
+Setting the header's **chipset byte** to `$02` (ROM + RAM + battery) alongside
+the size byte did not help either; `$00FFD6` was still `$00`, which was a
+plausible cause and is now ruled out.
+
+**Consequence: the save state cannot be developed or verified here at all**,
+at any size. That is a harder blocker than the 128KB ceiling.
+
+**Next step, bounded:** the harness prints `Map_LoROMMap` when it loads a ROM,
+so the relevant snes9x function is known. Reading its SRAM-window conditions
+would say what the header needs, or whether a 2MB LoROM maps banks `$70`-`$7D`
+as ROM mirror and leaves no room for SRAM at all.
+
+**Process note.** The savestate code was written before checking that a single
+byte could be written to SRAM and read back. That check costs one probe and
+would have come first; the order here was wrong.
+
 ## What this means for the save state
 
 The save state has to fit in **snes9x's 128KB** to stay verifiable, which is
