@@ -49,7 +49,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E51	|1|Binary|Fire/Blazon Power (Not Ultimate)|Each bit is mapped to the next power sequence (0000 0001 is Buster, 1000 0000 is Legenday, etc.)
 |001E52	|1|Binary|Ultimate - Jar 2|Again, bits are mapped to menu selections (0000 0001 is Ultimate, 1000 0000 is jar 2)
 |001E53	|1|Binary|Jar 3 - Talismans|Same story
-|001E54	|2|Binary|Max HP+|Each bit is mapped to a specific max health increase pickup, not sure yet which bits map to which drop but 0000 0000 0000 0001 is Somulo, obviously
+|001E54	|2|Binary|Max HP+ / Initial Stage gate|**Bit 0 doubles as "Initial Stage beaten"**: `$84:C1EF` sends a password or new-game load to the overworld when it is set and into area 0, the Somulo arena, when it is clear. Somulo is that stage's boss. |Each bit is mapped to a specific max health increase pickup, not sure yet which bits map to which drop but 0000 0000 0000 0001 is Somulo, obviously
 |001E56	|1|Binary|Progress flags (boss/stage)|Not previously mapped. Found by diffing password-loaded saves; goes 81 -> FF as the game is completed
 |001E57	|1|Binary|Progress flags, continued|Only the low two bits are used
 |001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`

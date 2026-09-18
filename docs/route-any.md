@@ -32,7 +32,7 @@ derived from the HP-up count rather than supplied.
 
 | Stage entered | Destination (`$1326`) | Area (`$8D`/2) | `$1E50`-`$1E58` | Max HP | Items |
 |---|---|---|---|---|---|
-| Initial Stage | — (before the overworld) | 1 | `04 00 00 00 00 00 00 00 00` | 4 | none |
+| Initial Stage | — (before the overworld) | 0 (Somulo arena) | `04 00 00 00 00 00 00 00 00` | 4 | none |
 | Town | 1 | 4 (S2 Town) | `06 10 00 00 03 00 00 00 00` | 6 | Earth Crest, 2 HP-ups |
 | Tower | 3 *(inferred)* | 18 (S4_1) | `08 10 00 00 0F 00 00 00 00` | 8 | Earth Crest, 4 HP-ups |
 | Forest | 2 | 10 (S3_1) | `08 14 00 00 0F 00 00 00 00` | 8 | + Claw |
@@ -68,6 +68,44 @@ The 13-entry destination table at `$81:E0F1` maps `$1326` to an area x 2; see
 
 Note the route order is not destination order: Town, Tower, Forest is
 destinations 1, 3, 2. The route visits Stage 4 before Stage 3.
+
+## Booting straight to the overworld
+
+The practice ROM should start on the overworld with the Initial Stage already
+beaten, since it is the least useful thing to practise. **This needs no custom
+transition code.** The game already decides it, at the tail of the routine that
+applies a loaded password:
+
+```
+$84:C1EF  AD 54 1E      LDA $1E54
+$84:C1F2  29 01         AND #$01      ; bit 0 = the Somulo HP-up
+$84:C1F4  D0 04         BNE $84:C1FA
+$84:C1F6  A9 04         LDA #$04      ; -> level state: the Initial Stage
+$84:C1F8  80 02         BRA $84:C1FC
+$84:C1FA  A9 10         LDA #$10      ; -> overworld state
+$84:C1FC  5C 9B 82 80   JML $80829B
+```
+
+Somulo is the Initial Stage's boss, so `$1E54` bit 0 *is* "Initial Stage
+beaten". Confirmed both ways:
+
+| `$1E54` bit 0 | Lands in |
+|---|---|
+| clear (boss rush password, `$1E54 = 00`) | area 0, the Somulo arena, state `$04` |
+| set (every other documented password) | the overworld, state `$10` |
+
+`docs/passwords.md` corroborates it independently: boss rush is the only
+password recorded as merely "accepted", while all the others say "accepted,
+loads overworld".
+
+So every route block from Town onward already sets the bit — Town's `$1E54` is
+`$03` — and boots to the overworld for free. A starting block for "Initial
+Stage beaten" is exactly the Town row.
+
+**Still to find:** where a *new game* initialises `$1E50`-`$1E58`, so the
+practice ROM can write a route block there instead of zeros. The password path
+writes the block just before `$84:C182`; a new game presumably has its own
+init, and that is the hook site.
 
 ## Not yet decided
 
