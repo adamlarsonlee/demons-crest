@@ -383,6 +383,67 @@ the numbers — every diff read zero, which looked like a perfect restore until
 the "scrolled away" column also read zero, which is impossible for a running
 game.
 
+## 4c. Save state, full WRAM + VRAM + CGRAM — `savestate_full.asm`, VRAM BROKEN
+
+Saves all of WRAM, all of VRAM and CGRAM into SRAM, now that 512 KB is known to
+be available (header `$09`, and snes9x's `SRAM_SIZE` is `0x80000`). Removes the
+selective-region reasoning entirely.
+
+### WRAM works completely
+
+| Check | Result |
+|-------|--------|
+| WRAM restored after scrolling 200 frames away | **1 byte of 131,072** differs |
+| `$7E:0000`-`$7FFF` | 403 dirty before, 1 after |
+| `$7E:8000`-`$FFFF`, `$7F:0000`-`$7FFF` | 0 before, 0 after |
+| `$7F:8000`-`$FFFF` | 752 dirty before, 0 after |
+
+The single remaining byte is almost certainly a frame counter. So `MVN` to and
+from SRAM banks `$70`-`$73` is correct, and SRAM at 512 KB works.
+
+### VRAM does not work, in either direction
+
+Instrumented by having the save read its own SRAM copy back into WRAM:
+
+```
+live VRAM[0..2]   = 00 00 00
+SRAM $74:0000..2  = 07 09 00
+```
+
+So the **read** captures wrong data. And the **write** does not take effect
+either: after scrolling 200 frames away, VRAM differs from the save by 1,398
+bytes, and a load moves that to 1,506 rather than to 0. It only jumps to ~33,700
+about 30 frames later, which is the game's own upload activity, not the restore.
+
+Adding a prefetch prime — setting `VMADD` to `$FFFF` and discarding one word so
+the increment wraps to 0 with `VRAM[0]` prefetched — changed nothing: the bytes
+came back `07 09 00` again, identical.
+
+**Not isolated.** Control demonstrably reaches past both `JSR`s, because
+instrumentation placed after them executes. The loop bounds, register widths and
+the SRAM offset arithmetic have all been checked against snes9x's own formula
+and appear right. What is happening between those facts is unknown.
+
+### Why this needs a different tool
+
+Every remaining hypothesis is about what a specific instruction does at a
+specific moment, and the harness cannot single step. This is precisely the case
+`CLAUDE.md` describes under "What a GUI emulator would unlock". MesenCE's GUI
+with its Lua console can inspect and step, and would settle in minutes what has
+resisted several rounds of guessing here.
+
+### Two false verifications to learn from
+
+**"Save then immediate load leaves VRAM byte-identical" proved nothing.** VRAM
+had not changed in between, so a restore that does nothing at all produces
+exactly that result. A no-op and a perfect round trip are indistinguishable
+unless the state is *changed* between save and load.
+
+**A frozen game read as a perfect restore.** An earlier version froze on a
+`PHB` before `RTS`, and every difference column read zero — which looked ideal
+until the "scrolled away" column also read zero, which is impossible for a
+running game. Always include a column that is *supposed* to be non-zero.
+
 ## 5. Recorded failures
 
 Both are kept in `src/asm/experiments/` rather than deleted, because the reason
