@@ -252,3 +252,68 @@ init, and that is the hook site.
 - **Mid-stage checkpoints.** Deferred. Only the 13 stage entries are reachable
   through the destination table; anything mid-stage needs the untested ROM hook
   at `$85:B0BC`.
+
+## Implementation plan
+
+Two hooks, no stage-select menu. The player picks a stage by flying the
+overworld as normal, and the practice ROM supplies the route state for whatever
+they enter.
+
+### 1. Boot: start on the overworld
+
+Write a starting block with `$1E54` bit 0 set. The game's own gate at
+`$84:C1EF` then sends a new game to the overworld instead of the Initial Stage.
+Setting that single bit is the whole feature.
+
+**Hook site not yet found** — wherever a new game initialises `$1E50`-`$1E58`.
+The password path writes the block just before `$84:C182`; a fresh start
+presumably has its own init.
+
+### 2. Level entry: write the route block for the destination
+
+Hook `$85:B097`, the first instruction of the load entry, and before the
+original `LDA $1E50` runs: read the destination from `$26` (direct page,
+`D = $1300`), look it up in a route table, and write that stage's nine bytes to
+`$1E50`-`$1E58`.
+
+Everything downstream then uses it, in the right order:
+
+```
+$85:B097  LDA $1E50      <- hook here, block already written
+$85:B09A  STA $1062      ; max HP picked up from the new block
+$85:B09D  JSL $859B39    ; tier computed from the new block
+$85:B0A1  CPY #$02       ; so the castle override fires correctly
+$85:B0A5  LDY $26        ; destination
+$85:B0BC  LDA $E0F1,Y    ; area
+```
+
+This is why the hook must be at `$85:B097` and not later: the tier calculation
+that redirects destination 6 to area 42 reads the progress block, so the block
+has to be in place before `$85:B09D`.
+
+`$26` is already valid at `$85:B097` — nothing between there and the `LDY $26`
+at `$85:B0A5` writes it. That is static reasoning from the disassembly, not
+measured, so it is the first thing a probe should confirm.
+
+### Route table
+
+Indexed by destination, not by route position:
+
+| Destination | Stage | Block |
+|---|---|---|
+| 1 | Town | `06 10 00 00 03 00 00 00 00` |
+| 2 | Forest | `08 10 00 00 07 01 00 00 00` |
+| 3 | Tower | `08 12 00 00 07 01 00 00 00` |
+| 6 | Castle | `08 16 00 00 07 01 00 00 00` |
+| 0 | Stage 1 revisit | `05 00 00 00 01 00 00 00 00` |
+
+Destinations the route does not use (4, 5, 7-12) need a policy: leave progress
+untouched, or supply the final block so those stages are at least playable.
+
+### Deferred to 100%
+
+The hold-Select first-visit/revisit modifier, and with it the decode of the
+mask tables `$85:8D61` and `$85:8D6B`. **Any% never revisits an area**, so
+progress alone disambiguates every stage on this route — as the castle already
+demonstrates, where writing the Any% block is what produces area 42 rather than
+area 37.
