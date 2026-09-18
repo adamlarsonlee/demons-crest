@@ -120,8 +120,20 @@ $80:B8F7  8D 86 00      STA $0086
    8-bit and the loop's register widths are left alone. The game computes edge
    detection itself at `$0094`, so the hook does not.
 3. Clears Start from `$0094` so the pause handler does not also see it.
-4. Discards its own `JSL` return address and jumps to `$80:BB07`, passing
+4. Restores the route's final progress block over `$1E50`-`$1E58`.
+5. Discards its own `JSL` return address and jumps to `$80:BB07`, passing
    `$0EA6` in `A`.
+
+**Why step 4 matters.** Without it the player arrives on the overworld carrying
+whatever the preset hook wrote for the stage they just left, and the map only
+offers the stages reachable at that progress — so one visit to Town would make
+the castle, Forest and Tower disappear. Restoring the final block closes the
+loop: boot offers everything, entering a stage presets that stage, exiting
+offers everything again. Progress earned inside a stage is discarded, which is
+what a practice ROM wants.
+
+Verified: in Town the block is `06 10 00 00 03 00 00 00 00` at max HP 6; after
+Select+Start it is `08 16 00 00 07 01 00 00 00` at max HP 8, on the overworld.
 
 **Why this site.** The hotkey needs a per-frame site in *task* context. The NMI
 hook cannot serve: the exit never returns, while NMI must end in `RTI`, so

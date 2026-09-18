@@ -12,7 +12,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 3
+!version_minor = 4
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -85,6 +85,9 @@ boot_hook:
 ; Replaces LDA #$FF / STA $0086 in the level gameplay loop. Select held plus
 ; Start newly pressed hands control to the game's own exit-area routine. The
 ; game computes pad edge detection itself at $0094, so this does not.
+;
+; It also restores the route's final progress block, so the overworld offers
+; every stage again after an exit. See the comment at the restore loop.
 ; ---------------------------------------------------------------------------
 org $80B8F5
     JSL exit_hook
@@ -107,6 +110,19 @@ exit_hook:
     LDA.l !pad_new_hi
     AND #$EF
     STA.l !pad_new_hi
+
+    ; Restore the route's final state on the way out. Without this the player
+    ; arrives on the overworld carrying whatever the preset hook wrote for the
+    ; stage they just left, and the map then only offers the stages reachable
+    ; at that progress - so after one visit to Town the castle would vanish.
+    SEP #$30
+    LDX #$00
+.restore:
+    LDA.l block_boot,X
+    STA.l !progress_base,X
+    INX
+    CPX #!block_size
+    BNE .restore
 
     ; Discard our JSL return address; the exit sequence never returns.
     PLA
