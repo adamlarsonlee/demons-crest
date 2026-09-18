@@ -6,55 +6,97 @@ to be able to check it, then the derived state blocks below it.
 
 ## The route
 
+As described verbally, then as measured from a full set of route dumps. **The
+two disagree on one point — see "Order" below.**
+
 ```
 Initial Stage          (played before the overworld exists)
-- Get 2 HP drops
-- Get Earth Crest
+- Beat Somulo          -> 1st HP drop
+- Beat Hippogriff      -> 2nd HP drop
+- Beat Arma            -> Earth Crest
 
 Town
-- Get 2 HP drops
-
-Tower
-- Get Claw            (allows sticking to walls)
+- Beat Belth           -> 2 HP drops
 
 Forest
-- Get Tornado
+- Beat Flame Lord      -> Tornado
+
+Tower
+- Beat Flier           -> Claw
 
 Castle
 - Beat the final boss
 ```
 
-## Derived state blocks
+### Order
 
-Progress at the moment each stage is **entered**, i.e. the cumulative sum of
-everything collected before it. Generated with `tools/state.py`; max HP is
-derived from the HP-up count rather than supplied.
+The verbal route was Town, **Tower, Forest**. The dumps show Town, **Forest,
+Tower**: the forest-section dumps carry no Tornado or Claw, `flame-lord-dead`
+adds Tornado, the tower-section dumps follow it, and `flier-dead` then adds
+Claw. Capture timestamps agree. The item attributions in the verbal route are
+right — Flame Lord in the forest gives Tornado, Flier in the tower gives Claw —
+only the stage order differs. **Measured order is used below; confirm it, since
+swapping it puts the wrong preset on two stages.**
 
-| Stage entered | Destination (`$1326`) | Area (`$8D`/2) | `$1E50`-`$1E58` | Max HP | Items |
-|---|---|---|---|---|---|
-| Initial Stage | — (before the overworld) | 0 (Somulo arena) | `04 00 00 00 00 00 00 00 00` | 4 | none |
-| Stage 1, first visit | — (mid Initial Stage) | 1 (S1_1) | `05 00 00 00 01 00 00 00 00` | 5 | Somulo HP-up only |
-| Town | 1 | 4 (S2 Town) | `06 10 00 00 03 00 00 00 00` | 6 | Earth Crest, 2 HP-ups |
-| Tower | 3 *(inferred)* | 18 (S4_1) | `08 10 00 00 0F 00 00 00 00` | 8 | Earth Crest, 4 HP-ups |
-| Forest | 2 | 10 (S3_1) | `08 14 00 00 0F 00 00 00 00` | 8 | + Claw |
-| Castle | 6 | 37 (S7_1) | `08 16 00 00 0F 00 00 00 00` | 8 | + Tornado |
+## Measured state blocks
 
-Reproduce any row with, for example:
+Read directly from the route dumps rather than derived, so these are what the
+game itself produces. Progress is as of *leaving* each milestone, which is the
+state to preset when entering the stage after it.
 
-```sh
-python3 tools/state.py encode EarthCrest Claw Tornado HPUp1 HPUp2 HPUp3 HPUp4
-```
+| Milestone | Area | `$1E50`-`$1E58` | HP | Items |
+|---|---|---|---|---|
+| Somulo dead | 1 | `05 00 00 00 01 00 00 00 00` | 5 | 1 HP-up |
+| Hippogriff dead | 2 | `06 00 00 00 03 00 00 00 00` | 6 | 2 HP-ups |
+| Arma dead (Initial Stage done) | overworld | `06 10 00 00 03 00 00 00 00` | 6 | + Earth Crest |
+| Belth dead (Town done) | overworld | `08 10 00 00 07 01 00 00 00` | 8 | + 2 HP-ups |
+| Flame Lord dead (Forest done) | overworld | `08 12 00 00 07 01 00 00 00` | 8 | + Tornado |
+| Flier dead (Tower done) | overworld | `08 16 00 00 07 01 00 00 00` | 8 | + Claw |
 
-The **stage 1 first visit** row exists because Somulo is fought at the start of
-the Initial Stage and drops the first HP up, so the rest of that stage is played
-with `$1E54` bit 0 already set and max HP 5. That is a different state from both
-the pre-Somulo start (`$1E54 = 00`, max HP 4) and the later revisit, and it is
-the state to preset for practising the stage rather than the boss. Note it is
-the same bit that the boot gate reads, so a block with only this bit set both
-skips the intro *and* represents having just beaten Somulo.
+So the block to preset for each stage entry is the previous milestone's:
 
-Which HP-up bits are used does not matter to the game, only how many: max HP is
-`4 + popcount($1E54, $1E55)`. `HPUp1` upward is chosen for readability.
+| Stage entered | Destination (`$1326`) | Area | Block to write |
+|---|---|---|---|
+| Stage 1, first visit | — (mid Initial Stage) | 1 | `05 00 00 00 01 00 00 00 00` |
+| Town | 1 | 4 | `06 10 00 00 03 00 00 00 00` |
+| Forest | 2 | 10 | `08 10 00 00 07 01 00 00 00` |
+| Tower | 3 | 18 | `08 12 00 00 07 01 00 00 00` |
+| Castle | 6 | 37 | `08 16 00 00 07 01 00 00 00` |
+
+These supersede the blocks previously derived by hand. The hand-derived ones had
+the right items but chose HP-up bits `$0F` where the game actually sets `$07` in
+`$1E54` plus `$01` in `$1E55` — the same *count*, so functionally identical
+under the `4 + popcount` rule, but no reason not to use the authentic values.
+
+## Section areas, measured
+
+| Stage | Sections (`$8D`/2) |
+|-------|--------------------|
+| Initial Stage | 1, 2 (and 0 for the Somulo arena, first visit only) |
+| Town | 4, 5, 9 |
+| Forest | 10, 12, 14 |
+| Tower | 18, 19 |
+
+Consistent with `docs/areas.md`: town is 4/5/9 = `S2 Town`, `S2_1`, `S2_2a`;
+forest 10/12/14 = `S3_1`, `S3_2a`, `S3_3a`; tower 18/19 = `S4_1`, `S4_2`.
+**Tower being area 18 confirms destination 3**, which was previously only
+inferred from a screenshot.
+
+## Two things the dumps did not settle
+
+**`$7E:0EA6` is not a simple per-stage location.** Across the route it reads 0
+for the Initial Stage and Town, 1 for the forest, 2 for the tower and 3 at the
+castle — which looks like a boss or route counter. But the older all-items dumps
+give 5 for the forest, 0 for town, 4 for ice and 1 for water, and the old and
+new forest dumps are the *same areas* (10 and 12) with different values. So it
+is neither area-determined nor a pure counter. It is written by `$80:BB09` from
+whatever the exit routine is passed in `A`, so it is "the overworld location to
+return to" — but what sets that value is unknown.
+
+**`$1E58` stays `$00` for the entire route**, through all four bosses. Yet the
+boss-rush password sets it to `$01`. So its bit 0 — the one the area-variant
+selector `$85:9B39` reads — is not set by normal Any% progression at all, and
+whatever it distinguishes does not occur on this route.
 
 ## How the destinations were identified
 
