@@ -61,7 +61,7 @@ So the block to preset for each stage entry is the previous milestone's:
 | Town | 1 | 4 | `06 10 00 00 03 00 00 00 00` |
 | Forest | 2 | 10 | `08 10 00 00 07 01 00 00 00` |
 | Tower | 3 | 18 | `08 12 00 00 07 01 00 00 00` |
-| Castle | 6 | 37 | `08 16 00 00 07 01 00 00 00` |
+| Castle | 6 | **42**, not 37 — see below | `08 16 00 00 07 01 00 00 00` |
 
 These supersede the blocks previously derived by hand. The hand-derived ones had
 the right items but chose HP-up bits `$0F` where the game actually sets `$07` in
@@ -81,6 +81,41 @@ Consistent with `docs/areas.md`: town is 4/5/9 = `S2 Town`, `S2_1`, `S2_2a`;
 forest 10/12/14 = `S3_1`, `S3_2a`, `S3_3a`; tower 18/19 = `S4_1`, `S4_2`.
 **Tower being area 18 confirms destination 3**, which was previously only
 inferred from a screenshot.
+
+## The castle is progress-gated, and the variant selector works
+
+Entering destination 6 with the authentic Any% block produces **area 42**, not
+the area 37 the destination table holds. The override at the load entry fired:
+
+```
+$85:B09D  JSL $859B39      ; progress -> tier in Y
+$85:B0A1  CPY #$02
+$85:B0A3  BNE $85:B0BA     ; normal table path -> area 37
+$85:B0A5  LDY $26
+$85:B0A7  CPY #$06         ; destination 6 only
+$85:B0A9  BNE $85:B0BA
+$85:B0B0  LDA #$54         ; area 42
+```
+
+| Progress | destination 6 gives |
+|---|---|
+| all items | area 37 — stained glass, ornate torches, castle interior |
+| Any% route block | **area 42** — a lava cavern, loads cleanly, HP bar shows 8 |
+
+**This is the first-visit-versus-revisit mechanism working, observed rather than
+inferred.** `$85:9B39` returns tier 2 for route-level progress, and the game
+picks a different area for the same destination. So for the castle the practice
+ROM gets the right variant **for free** by writing the right progress block —
+no hold-Select modifier and no mask-table decode needed. Whether that
+generalises to other stages is untested; the override only checks destination 6.
+
+**Unresolved: which of 42 and 37 is the Any% final stage.** Area 42 is what the
+route's own progress produces, which argues for it, and `docs/areas.md` does not
+name it. But the castle was never entered during the dump session, and the
+`overworld-castle` dump cannot settle it because `$1326` holds load-time scratch
+on the overworld (`$700`, `$800`, `$900` across all nine overworld dumps), so
+the destination under the cursor is not recoverable from a dump. One dump from
+inside the castle would close this.
 
 ## Two things the dumps did not settle
 
