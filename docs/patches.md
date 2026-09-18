@@ -56,10 +56,21 @@ $84:8906  A9 04         LDA #$04
 $84:8908  8D 50 1E      STA $1E50     ; max HP 4
 ```
 
-**Replaced with** a `JSL` to injected code plus a `NOP`.
+**Replaced with** a `JML` to injected code plus a `NOP`.
 
 **What the injected code does.** Copies a nine-byte progress block over
 `$1E50`-`$1E58`, then jumps to `$84:C18F`.
+
+**`JML`, not `JSL` — this was a bug through v0.5.** The routine never returns,
+it hands off to the password tail, so a `JSL` pushed a three-byte return address
+that nothing ever popped. Two consequences: the stack pointer stayed three bytes
+lower for the rest of the session, and the password tail's own `RTS`/`RTL`
+returned *through our stale address* into the middle of the new-game init
+routine instead of to its own caller. The visible symptom was that a new game
+landed on the overworld **map submenu** rather than the overworld itself; with
+the `JML` it lands on the overworld. Fixed in v0.6. The exit path in change 3
+discards its return address with three `PLA`s and was always correct; this hook
+simply should never have been a `JSL`.
 
 **The block is the route's FINAL state, not its opening one** —
 `08 16 00 00 07 01 00 00 00`, taken from the `overworld-castle` route dump. The
@@ -486,3 +497,28 @@ smallest hook is usually the wrong one.
 
 The corollary for recon: when a routine looks like the right target, find what
 *calls* it before hooking it.
+
+## 5. Defeat the cartridge's copier detection
+
+**Where.** `$80:8753` and `$80:E550`, one byte each.
+
+**Original bytes.** `D0` (`BNE`) at both. **Replaced with** `80` (`BRA`).
+
+**Why.** Both sites run the same test for writable memory at `$70:1FFF`, the
+LoROM SRAM window, which a genuine Demon's Blazon cartridge does not have:
+read the byte, increment it, write it back, compare. On a real cart the write
+lands in open bus, the compare fails, and the branch is taken. Declaring SRAM
+for the save state (change 4) makes that address genuinely writable, so both
+compares succeed and the game sets its copier flags: `$0EEB` at `$80:8757`,
+which makes the crest menu refuse to open, and `$0EEC` at `$80:E554`, which
+makes `$82:88F9` branch over the instruction that subtracts damage from an
+enemy. Forcing each branch makes the copier-detected path unreachable.
+
+**Verified.** Poking `$0EEB = $FF` into the unmodified ROM reproduces the
+refusing menu; the reporter's bus dumps show `$70:1FFF` incrementing while
+`$0EEC` flipped to `$FF`.
+
+**Known wart.** The checks still increment `$70:1FFF`, which currently holds the
+saved copy of WRAM `$7E:1FFF`, so a damage event after a save nudges one byte of
+the saved state. The save state should move its banks up to `$71`-`$77` and
+leave `$70` as a sacrificial bank.

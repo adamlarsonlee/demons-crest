@@ -1640,3 +1640,63 @@ triggered**. Diffed against `forest-3-no-canopy` it isolates the layout selector
 directly: same area, same palette, same tileset, one differing layout. That is a
 far tighter experiment than comparing different areas, where a load touches
 hundreds of variables.
+
+## Declaring SRAM trips the cartridge's copier detection — SOLVED
+
+Reported against v0.5 and v0.6: in a stage, plain **Start does not open the
+crest menu**, and **enemies stop taking damage after Firebrand takes damage**,
+persisting across a stage exit and re-entry.
+
+**Root cause.** The game tests twice whether writable memory exists at
+`$70:1FFF`, the LoROM SRAM window, because a genuine cartridge has none:
+
+```
+$80:8746  LDA $701FFF / INC A / STA $701FFF / CMP $701FFF
+$80:8753  BNE +6                 ; read-back differs -> genuine cartridge
+$80:8755  LDA #$FF / STA $0EEB   ; read-back matched -> copier detected
+```
+
+and the same sequence at `$80:E543`, setting `$0EEC`. Declaring SRAM for the
+save state makes `$70:1FFF` genuinely writable, so both checks conclude the
+cartridge is a copy.
+
+| Flag | Set by | Read at | Effect |
+|---|---|---|---|
+| `$0EEB` | `$80:8757` | `$84:8A39` | the crest menu never opens |
+| `$0EEC` | `$80:E554` | `$82:88F9` | branches over the `SBC $0000,Y` that subtracts damage from an enemy |
+| `$0EED` | `$82:9B3F` | `$84:8A3B` | same menu chain; not SRAM-dependent |
+| `$0EEE` | `$BE:E3CF` | `$82:88FB` | same damage chain; set by a ROM-mirror compare of `$80:FFC1` against `$40:FFC1` |
+
+**Evidence.** In the reporter's bus dumps, `$70:1FFF` incremented `C6 -> C7`
+between two captures while `$0EEC` went `$00 -> $FF`. Poking `$0EEB = $FF` into
+the **clean** ROM reproduces the menu symptom exactly; poking `$0EEC = $FF`
+leaves the menu working, which is what separated the two flags.
+
+**Fix.** Turn both `BNE`s into `BRA`s, at `$80:8753` and `$80:E550`. Two bytes.
+A byte search for the `LDA/INC/STA/CMP $701FFF` signature finds exactly these
+two sites, and the reporter's no-SRAM build showed no symptoms, so no other
+SRAM-dependent check exists.
+
+**Why this took so long, and the lesson.** It was never reproducible in this
+harness, because `docs/emulators.md` had already recorded that the pinned snes9x
+core **does not map SRAM into the CPU address space for this cartridge**. That
+made the harness fail the copier check exactly like genuine hardware, so the
+harness was immune by accident. Eight hypotheses were falsified against it
+before the reporter's no-SRAM build isolated the header. **A harness that cannot
+exercise a feature cannot clear it** - the SRAM finding was already written down
+and should have been the first suspect the moment a symptom appeared only on the
+emulator that honours the header.
+
+### Falsified along the way
+
+| Hypothesis | Check that killed it |
+|---|---|
+| The level hook consumes Start | Start-clearing is only on the exit path, which never returns |
+| `LDA #$FF` assembled 16-bit, clobbering `$0087` | emitted bytes are `A9 FF`, 8-bit |
+| `preset_hook` turned a 16-bit HP copy into 8-bit | write watch: the clean ROM writes only `$1062`, from `$85:B09D` |
+| Reduced route progress gates the menu | poking the Town block into the clean ROM still opens the menu |
+| `freecode` overwrote data the game reads | all changed regions were originally all `$00` bar the hook sites and header; read watches on every code region during a level load and a damage event: never read |
+| The progress block is corrupted during play | written once by `boot_hook`, once by `preset_hook`, then untouched for 3,000 frames |
+| Damage breaks the live form at `$1054` | write watch through damage identical on clean and patched |
+| `$1E51 = $00` is an invalid weapon state | an authentic fresh game plays the Initial Stage with `$1E50-$1E58 = 04 00 00 00 00 00 00 00 00` |
+| The route presets stripping progress bits | a build with every validity byte cleared still reproduces it |

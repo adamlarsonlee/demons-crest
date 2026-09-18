@@ -13,7 +13,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 5
+!version_minor = 7
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -73,6 +73,48 @@ org $00FFD8
     db $09
 
 ; ---------------------------------------------------------------------------
+; 5. Defeat the cartridge's copier detection
+;
+; The game tests twice whether writable memory exists at $70:1FFF - the LoROM
+; SRAM window - because a genuine Demon's Blazon cartridge has no SRAM there:
+;
+;   $80:8746  LDA $701FFF / INC A / STA $701FFF / CMP $701FFF
+;   $80:8753  BNE +6                  ; read-back differs: genuine cart
+;   $80:8755  LDA #$FF / STA $0EEB    ; read-back matched: copier detected
+;
+; and the same sequence at $80:E543 setting $0EEC instead. On a real cart the
+; write lands in open bus, the read-back mismatches, and neither flag is set.
+;
+; Declaring SRAM for the save state makes $70:1FFF genuinely writable, so both
+; checks conclude the cartridge is a copy. $82:88F5 then reads $0EEC (and
+; $0EEE) and, when either is set, branches over the `SBC $0000,Y` that subtracts
+; damage from an enemy - so shots stop hurting anything. The crest menu fails
+; the same way.
+;
+; Confirmed from the reporter's own bus dumps: $70:1FFF incremented C6 -> C7
+; between two captures while $0EEC went $00 -> $FF.
+;
+; Turning each BNE into BRA makes the copier-detected path unreachable. Two
+; bytes. The checks still touch $70:1FFF, which is why the save state must not
+; keep anything there - see the note on bank $70 below.
+;
+; $0EEE is left alone: it comes from a ROM-mirror comparison at $BE:E3C3
+; ($80:FFC1 against $40:FFC1), which this patch does not disturb.
+;
+; This is not about circumventing anything: the check exists to spot a cartridge
+; with unexpected RAM, and ours has unexpected RAM by design.
+; ---------------------------------------------------------------------------
+assert read1($808746) == $AF, "protection site 1 moved: expected LDA $701FFF at $80:8746"
+assert read1($808753) == $D0, "protection site 1 moved: expected BNE at $80:8753"
+assert read1($80E543) == $AF, "protection site 2 moved: expected LDA $701FFF at $80:E543"
+assert read1($80E550) == $D0, "protection site 2 moved: expected BNE at $80:E550"
+
+org $808753
+    db $80                      ; BNE -> BRA
+org $80E550
+    db $80                      ; BNE -> BRA
+
+; ---------------------------------------------------------------------------
 ; 1. New game starts on the overworld
 ;
 ; Replaces LDA #$04 / STA $1E50 in the new-game progress init. Writes the
@@ -84,8 +126,13 @@ org $00FFD8
 ; The block written here is the route's final state, not its opening one - see
 ; block_boot below for why.
 ; ---------------------------------------------------------------------------
+; Entered with JML, not JSL: this routine never comes back, it hands off to the
+; password tail. A JSL would push a three-byte return address that nothing ever
+; pops, leaving the stack pointer three bytes lower for the rest of the session
+; - and the password tail's own RTS/RTL would then return through our address
+; instead of its caller's.
 org $848906
-    JSL boot_hook
+    JML boot_hook
     NOP
 
 freecode

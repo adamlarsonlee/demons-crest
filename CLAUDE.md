@@ -68,6 +68,16 @@ deliverable. Don't propose emulator-side Lua features as the product.
   Why this matters more than it first appeared: **VRAM changes within a
   section** as the camera scrolls, so WRAM-only is not sound if the player
   moves between save and load. See `docs/patches.md`.
+  **Resolved, with a permanent coupling.** Declaring SRAM is what the save
+  state needs and is also what makes the game believe it is running on a copier:
+  the checks at `$80:8746` and `$80:E543` write to `$70:1FFF` and read it back.
+  Any build that declares SRAM therefore also needs the two-byte protection
+  patch (`docs/patches.md` change 5), and `src/asm/patch.asm` asserts both sites
+  so a shifted address fails the build rather than silently re-arming the
+  protection. The save state should also move off bank `$70`, since the checks
+  keep incrementing `$70:1FFF` and that byte currently holds saved WRAM
+  `$7E:1FFF`.
+
 - **4MB expansion — approved in principle, not yet needed.** The playability
   conversation has happened and expansion is accepted when a feature requires
   it. It is not required yet, and doing it later costs nothing: hooks patch
@@ -166,7 +176,17 @@ These are all mistakes already made here. Each cost real time.
    `index x 2` hit `$8D` and the hit was discarded *because* the closed-leads
    table said so. Closures deserve the same scrutiny as findings — record what
    evidence closed a lead, and re-open it when a hit contradicts it.
-9. **Test more than one encoding before concluding "absent".** "The area index
+9. **A harness that cannot exercise a feature cannot clear it.** Declaring SRAM
+   for the save state trips the cartridge's own copier detection, which reads
+   `$70:1FFF` and, finding it writable, disables the crest menu and stops shots
+   damaging enemies. It was invisible here for eight falsified hypotheses
+   because `docs/emulators.md` had **already recorded** that the pinned snes9x
+   core does not map SRAM into CPU space for this cartridge - so the harness
+   failed the copier check exactly like genuine hardware and was immune by
+   accident. When a symptom appears only on the emulator that honours a feature
+   this harness cannot reach, suspect that feature first, and go and re-read
+   what is already written down about it.
+10. **Test more than one encoding before concluding "absent".** "The area index
    is not in WRAM" was concluded from searching for the raw value. It was there
    all along, doubled. An absence claim is only as wide as the encodings tested,
    so state which ones those were.
