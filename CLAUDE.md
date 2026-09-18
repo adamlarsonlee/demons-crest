@@ -30,14 +30,28 @@ deliverable. Don't propose emulator-side Lua features as the product.
 
   **Measured, via `src/asm/experiments/sram_probe.asm`:** declaring SRAM in the
   header does make the emulator provide it, so this is developable headlessly
-  and needs no flash cart. But the core honours the size **only up to 128KB**
-  ($03 -> 8192, $05 -> 32768, $07 -> 131072, $08 and $09 -> 131072). 128KB is
-  exactly the size of WRAM, so there is no room for VRAM beside it and X2's
-  scheme does not fit.
+  and needs no flash cart. The pinned snes9x core honours the size up to 128KB
+  and clamps above ($03 -> 8192, $05 -> 32768, $07 -> 131072, $08 and $09 ->
+  131072).
 
-  That points at a different design: save **WRAM only**. For practice that may
-  be enough — restoring within the same area means VRAM already holds the right
-  graphics, which is why X2 needed VRAM and we might not. Untested.
+  **That 128KB ceiling is snes9x's, not the hardware's or the format's.**
+  snes9xgit/snes9x#714 records the cap and notes 256KB works in other
+  emulators. Stronger still, `RockmanX2Practice` declares **512KB** and its
+  readme says it runs on real hardware via SD2SNES. So larger SRAM is
+  available in principle.
+
+  The real trade-off is therefore **capability against testability**:
+
+  | SRAM | What fits | Verifiable in this harness |
+  |------|-----------|----------------------------|
+  | 128KB (`$07`) | WRAM only, so same-section restores | **yes** |
+  | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **no** — snes9x clamps |
+
+  Going above 128KB means giving up the headless verification loop for this
+  feature and testing only on hardware or another emulator, which is a large
+  cost given that loop is how everything else here has been proven. The agreed
+  scope — restore within the same section — makes 128KB sufficient, so the
+  implemented probe stays at `$07`.
 - **4MB expansion — approved in principle, not yet needed.** The playability
   conversation has happened and expansion is accepted when a feature requires
   it. It is not required yet, and doing it later costs nothing: hooks patch
