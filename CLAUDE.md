@@ -38,11 +38,21 @@ deliverable. Don't propose emulator-side Lua features as the product.
   That points at a different design: save **WRAM only**. For practice that may
   be enough — restoring within the same area means VRAM already holds the right
   graphics, which is why X2 needed VRAM and we might not. Untested.
-- **4MB expansion.** The ROM has no contiguous free region over 891 bytes, so
-  practice code needs the ROM expanded 2MB -> 4MB. Deferred pending a
-  conversation about playability across FXPak Pro, other flashcarts and
-  emulators. **Do not expand the ROM without settling this.** It also forces
-  BPS over IPS for distribution.
+- **4MB expansion — approved in principle, not yet needed.** The playability
+  conversation has happened and expansion is accepted when a feature requires
+  it. It is not required yet, and doing it later costs nothing: hooks patch
+  fixed sites in the original code, so where injected code lives does not
+  affect them, and expanding would not simplify anything already built.
+
+  Measured against the v0.4 patch: 20 bytes at hook sites plus the checksum,
+  and ~197 bytes of injected code and data — **0.36% of the ~54,751 bytes of
+  free runs of 64 bytes or more.** The largest contiguous gaps are 891 bytes at
+  `0x0C24B5`, then 422, 410, 373 and 346.
+
+  So the trigger for expanding is a feature needing **contiguous** space that
+  the 891-byte gap cannot hold: a HUD font, many route tables, or large text.
+  A save-state routine is a few hundred bytes and fits today. Expanding still
+  forces BPS over IPS for distribution.
 - **Where the per-frame hook lives.** Both candidates perturb frame pacing;
   see "Hooks" below. Needs a purpose-built repeatable measurement.
 
