@@ -23,6 +23,7 @@ Conventions used throughout:
 | Boot to the overworld with route progress | `patch.asm` | **works** |
 | Exit a stage to the overworld on a hotkey | `patch.asm` | **works**, validated on hardware |
 | Per-stage route presets on entry | `patch.asm` | **works** |
+| Save / load state within a section | `savestate_probe.asm` | **works**, not yet in `patch.asm` |
 | Kill Firebrand on a hotkey | `death_probe.asm` | **fails**, kept as a negative result |
 | Exit from the intro stage | `boot_exit_combo.asm` | **fails**, kept as a negative result |
 
@@ -190,7 +191,61 @@ instead of area 42.
 
 ---
 
-## 4. Recorded failures
+## 4. Save / load state — `savestate_probe.asm`
+
+**What the player sees.** Select+R saves, Select+L loads, matching
+`RockmanX2Practice`. Roughly a quarter-second freeze on each, which is the copy.
+
+**Scope.** Same section only, agreed up front. The state is not meant to survive
+a move to a different area.
+
+**Header change.** `$00:FFD8`, the SRAM size byte, `$00` to `$07`. Demon's Crest
+shipped with no SRAM. `$07` is 128 KB and is the largest the emulator honours —
+`$08` and `$09` both clamp to 128 KB, measured in `sram_probe.asm`.
+
+**Where.** `$80:B8F5`, the same level-loop slot the exit hook uses.
+
+**What the injected code does.** On Select+R or Select+L, copies WRAM to or
+from SRAM in four 32 KB `MVN` blocks, since LoROM maps SRAM as 32 KB windows at
+banks `$70`-`$7D`:
+
+```
+$7E:0000-$7FFF  <->  $70:0000-$7FFF
+$7E:8000-$FFFF  <->  $71:0000-$7FFF
+$7F:0000-$7FFF  <->  $72:0000-$7FFF
+$7F:8000-$FFFF  <->  $73:0000-$7FFF
+```
+
+**Why WRAM only, no VRAM.** 128 KB is exactly WRAM's size, so there is no room
+for VRAM beside it. That is affordable only because of the agreed scope:
+restoring within the same section means VRAM already holds the right graphics.
+X2 saves VRAM because its states are general.
+
+**Why the stack survives.** Restoring WRAM overwrites the stack in use. That is
+safe only because save and load happen at the *same hook site* — `SP` and our
+own return address are identical both times, so the bytes written over the
+stack are the bytes already there. A general save state cannot rely on this;
+X2 keeps a separate saved `SP`.
+
+**Why NMI is masked.** `MVN` is interruptible between iterations, and an NMI
+firing while the stack is half-restored would push onto corrupt memory. `$4200`
+is set to `$00` for the copy and restored to `$B1`, the value the game itself
+writes at `$80:B7BA`. It cannot be read back and restored, because `$4200` is
+write-only and there is nowhere in WRAM to stash it — WRAM is what is being
+overwritten.
+
+**Measured.** Save in area 1, move right for 170 frames, load. Zero page is
+byte-identical to the save immediately afterwards; whole-WRAM divergence bottoms
+at 178 bytes of 131,072 (0.14%) at a matched sampling offset, the residual being
+the game continuing to run. The frame afterwards is ordinary gameplay with
+Firebrand back at his saved position.
+
+**Not in `patch.asm` yet** — it shares the `$80:B8F5` slot with the exit hook,
+so the two need merging into one handler.
+
+---
+
+## 5. Recorded failures
 
 Both are kept in `src/asm/experiments/` rather than deleted, because the reason
 each failed is worth not rediscovering.
