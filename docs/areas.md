@@ -27,6 +27,18 @@ level-section index rather than a level plus a separate section value. There are
 
 So the two areas measured here are **index 2 = S1_2** and **index 7 = S2_3b**.
 
+## Castle sections: 42 and 37
+
+Both are the castle, at different points in the game, and destination 6 chooses
+between them by progress (see `docs/route-any.md`).
+
+- **42 — the Any% castle.** A single dark room. What destination 6 gives at
+  Any% route progress, via the override at `$85:B0A1`. Unnamed in the
+  randomizer's table.
+- **37 (`S7_1`) — a later castle section.** Stained-glass interior; what
+  destination 6 gives at full progress. **Any% never reaches it**, so it is the
+  wrong target for a route preset.
+
 ## Area 0 versus area 1
 
 Area 0 (`Somulo arena`) is reachable **only on the pre-overworld first visit**,

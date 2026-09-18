@@ -28,15 +28,12 @@ Castle
 - Beat the final boss
 ```
 
-### Order
+### Order — settled
 
-The verbal route was Town, **Tower, Forest**. The dumps show Town, **Forest,
-Tower**: the forest-section dumps carry no Tornado or Claw, `flame-lord-dead`
-adds Tornado, the tower-section dumps follow it, and `flier-dead` then adds
-Claw. Capture timestamps agree. The item attributions in the verbal route are
-right — Flame Lord in the forest gives Tornado, Flier in the tower gives Claw —
-only the stage order differs. **Measured order is used below; confirm it, since
-swapping it puts the wrong preset on two stages.**
+**Town, Forest, Tower.** Confirmed by the runner after the dumps showed it: the
+forest-section dumps carry no Tornado or Claw, `flame-lord-dead` adds Tornado,
+the tower sections follow, and `flier-dead` then adds Claw. An earlier verbal
+description had Tower before Forest and was a miscommunication.
 
 ## Measured state blocks
 
@@ -109,13 +106,18 @@ ROM gets the right variant **for free** by writing the right progress block —
 no hold-Select modifier and no mask-table decode needed. Whether that
 generalises to other stages is untested; the override only checks destination 6.
 
-**Unresolved: which of 42 and 37 is the Any% final stage.** Area 42 is what the
-route's own progress produces, which argues for it, and `docs/areas.md` does not
-name it. But the castle was never entered during the dump session, and the
-`overworld-castle` dump cannot settle it because `$1326` holds load-time scratch
-on the overworld (`$700`, `$800`, `$900` across all nine overworld dumps), so
-the destination under the cursor is not recoverable from a dump. One dump from
-inside the castle would close this.
+**Settled: area 42 is the Any% castle.** Confirmed by the runner — the Any%
+castle is a single dark room, which matches area 42's lava-cavern frame. Area 37,
+the stained-glass interior, is a **later castle section that Any% never
+reaches**; both are the castle, at different points in the game. So the route's
+castle preset must produce area 42, which it does automatically: writing the
+Any% block makes `$85:9B39` return tier 2 and the override redirects
+destination 6.
+
+Note the consequence for testing — entering destination 6 with an all-items
+save, as every earlier warp test did, lands in a section the route never
+visits. Route states have to be written before a destination is entered, or the
+area itself comes out wrong.
 
 ## Two things the dumps did not settle
 
