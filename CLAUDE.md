@@ -44,8 +44,15 @@ deliverable. Don't propose emulator-side Lua features as the product.
 
   | SRAM | What fits | Verifiable in this harness |
   |------|-----------|----------------------------|
-  | 128KB (`$07`) | WRAM only, so same-section restores | **yes** |
-  | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **no** — snes9x clamps |
+  | 128KB (`$07`) | WRAM only, so same-section restores | **yes**, fully |
+  | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **partly** — snes9x maps 128KB, so the 7 banks alias onto 4 windows; single transfers can be checked, a full round trip cannot |
+
+  **Correction:** this section and `docs/emulators.md` both used to say SRAM was
+  unreachable from the CPU in the pinned core, so save states were untestable
+  here. That was wrong - the test it rested on never actually wrote the chipset
+  byte. With `$00FFD6 = $02` present, CPU writes reach SRAM and
+  `--dump-sram` shows them. Believing the wrong version is what turned a
+  measurable save-state bug into three rounds of guessing.
 
   Going above 128KB means giving up the headless verification loop for this
   feature — unless another emulator can provide both.

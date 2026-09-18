@@ -45,48 +45,46 @@ after 60 seconds.
 Mesen's Lua API is real and rich, but reaching it requires the GUI, which is not
 automation.
 
-## SRAM is not writable in this harness at all
+## SRAM *is* reachable — the earlier finding here was wrong
 
-Worse than the size limit, and found only after writing the save-state code:
-**the CPU cannot reach SRAM in the pinned snes9x core.** Measured with
-`src/asm/experiments/sram_where.asm`, which writes a distinct four-byte marker
-to each candidate window from a hook whose execution is confirmed (`$7E:0086`
-reads `$FF`):
+This document previously said "the CPU cannot reach SRAM in the pinned snes9x
+core", measured with `sram_where.asm`, and concluded the save state "cannot be
+developed or verified here at all". **That was wrong, and it cost three rounds
+of blind guessing at a save-state bug that could have been measured.**
 
-| Write target | Appears in SAVE_RAM |
-|--------------|---------------------|
-| `$70:0000` | no |
-| `$70:8000` | no |
-| `$71:0000` | no |
-| `$F0:0000` | no |
-| `$30:6000` | no |
-| `$B0:6000` | no |
+The tell was in the old text itself: it noted that setting the chipset byte to
+`$02` "did not help either; `$00FFD6` was still `$00`". That is not a result, it
+is a failed write - the byte the test depended on was never actually in the ROM.
 
-Meanwhile `retro_get_memory_size(SAVE_RAM)` reports 131,072 bytes, and that
-buffer is uniformly `$60` and never changes. So snes9x allocates an SRAM buffer
-but does not map it into the CPU address space for this cartridge.
+With `$00FFD6 = $02` and `$00FFD8 = $09` genuinely present, CPU writes reach
+SRAM and `retro_get_memory_data(SAVE_RAM)` reflects them. Measured with v0.9:
+SAVE_RAM held 0 meaningful bytes before the save hotkey and **67,913** after it.
+The WRAM half of the transfer is correct too - bank `$71`'s window matches WRAM
+`$7E:0000-$7FFF` in 32,728 of 32,768 bytes, the difference being the frames
+between the reference dump and the save.
 
-Setting the header's **chipset byte** to `$02` (ROM + RAM + battery) alongside
-the size byte did not help either; `$00FFD6` was still `$00`, which was a
-plausible cause and is now ruled out.
+Use `tools/headless.py --dump-sram FRAME[,FRAME]`.
 
-**Consequence: the save state cannot be developed or verified here at all**,
-at any size. That is a harder blocker than the 128KB ceiling.
+### Window size differs per emulator, and that bounds what can be verified
 
-**Next step, bounded:** the harness prints `Map_LoROMMap` when it loads a ROM,
-so the relevant snes9x function is known. Reading its SRAM-window conditions
-would say what the header needs, or whether a 2MB LoROM maps banks `$70`-`$7D`
-as ROM mirror and leaves no room for SRAM at all.
+The header declares `$09` (512 KB). Nobody honours that literally. The LoROM
+offset is `(((Address & $ff0000) >> 1) | (Address & $7fff)) & SRAMMask`, so the
+mask decides how many 32 KB bank windows are distinct:
 
-**Process note.** The savestate code was written before checking that a single
-byte could be written to SRAM and read back. That check costs one probe and
-would have come first; the order here was wrong.
+| Emulator | SAVE_RAM | Distinct windows | Effect on a 7-bank, 224 KB state |
+|---|---|---|---|
+| snes9x (pinned) | 131,072 | 4 (`$1FFFF` mask) | `$75`-`$77` **alias onto** `$71`-`$73`, so VRAM and CGRAM overwrite the WRAM copy |
+| MesenCE | — | 8, measured | `$71`-`$77` all distinct; `$78` wraps to `$70` |
 
-## What this means for the save state
+MesenCE's eight windows were measured from a reporter's 16 MB bus dump by
+comparing the first 4 KB of each bank: `$70` and `$78` are identical and the
+rest differ.
 
-The save state has to fit in **snes9x's 128KB** to stay verifiable, which is
-the project's whole method. That rules out X2's WRAM + VRAM + CGRAM approach,
-but a selective state does fit — see `docs/patches.md`.
+So this harness can now **exercise** the save path, dump the result and check
+any single region's transfer, but it **cannot validate a full round trip**,
+because four windows cannot hold seven banks. A full round trip needs an
+emulator with at least 224 KB mapped. Reducing the state to four banks would
+make it fully verifiable here, at the cost of dropping VRAM or CGRAM.
 
 ## Not investigated
 

@@ -205,6 +205,8 @@ def main():
     ap.add_argument("--prefix", default="frame")
     ap.add_argument("--dump-wram", default="", help="comma-separated frame numbers")
     ap.add_argument("--dump-vram", default="", help="comma-separated frame numbers")
+    ap.add_argument("--dump-sram", default="", help="comma-separated frame numbers; "
+                                                    "battery SRAM, for verifying save states")
     ap.add_argument("--load-state", help="restore this state before running; "
                                          "frame numbers then count from the restore")
     ap.add_argument("--save-state", default="", help="frame:path")
@@ -215,6 +217,7 @@ def main():
     wanted = {int(x) for x in args.dump.split(",") if x.strip()}
     want_wram = {int(x) for x in args.dump_wram.split(",") if x.strip()}
     want_vram = {int(x) for x in args.dump_vram.split(",") if x.strip()}
+    want_sram = {int(x) for x in args.dump_sram.split(",") if x.strip()}
     schedule = {}
     for item in filter(None, args.press.split(",")):
         f, btn = item.split(":")
@@ -276,6 +279,15 @@ def main():
                 print(f"  wrote {out}  ({len(d):,} bytes)")
             else:
                 print(f"  frame {f}: core exposes no system RAM")
+        if f in want_sram:
+            d = core.memory(MEM_SAVE_RAM)
+            if d:
+                out = outdir / f"{args.prefix}-{f:05d}.sram"
+                out.write_bytes(d)
+                nz = sum(1 for b in d if b not in (0x00, 0xFF, 0x60))
+                print(f"  wrote {out}  ({len(d):,} bytes; {nz:,} bytes not 00/FF/60)")
+            else:
+                print(f"  frame {f}: core exposes no save RAM")
         if f in want_vram:
             d = core.memory(MEM_VIDEO_RAM)
             if d:
