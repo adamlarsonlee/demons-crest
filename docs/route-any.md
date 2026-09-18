@@ -265,73 +265,60 @@ Write a starting block with `$1E54` bit 0 set. The game's own gate at
 `$84:C1EF` then sends a new game to the overworld instead of the Initial Stage.
 Setting that single bit is the whole feature.
 
-**Hook site found, and the block write works — but the bit alone is not
-enough.** `src/asm/experiments/boot_overworld.asm` hooks it and is verified to
-produce the intended state; a new game still starts in area 0.
+**Solved by handing control to the password path.** See
+`src/asm/experiments/boot_password.asm`, which works.
 
-The new-game progress init is `$84:88DE`, reached from a `JSL` stub at
-`$84:8550`:
+The password path already writes a progress block and then dispatches to the
+overworld, and every documented password is recorded as "loads overworld", so
+the behaviour is proven. Rather than change the new-game dispatch or fight the
+intro stage, the hook writes the route block and jumps into the password
+path's tail.
 
 ```
-$84:88E2  STZ $008D      ; area 0, hardcoded
-$84:88E8  STZ $1E51      ; ... through $1E57
-$84:8906  LDA #$04       <- 5-byte hook slot
-$84:8908  STA $1E50      ; max HP 4
-$84:890F  (second init part, called separately from $84:856B)
-$84:8919  RTS
+org $848906                     ; the new-game progress init's 5-byte slot
+    JSL boot_hook
+    NOP
+
+boot_hook:
+    SEP #$30
+    ... copy the 9-byte block to $1E50 ...
+    JML $84C18F                 ; the password path's setup, not its decoder
 ```
 
-Hooking `$84:8906` and writing the Town block gives exactly
-`06 10 00 00 03 00 00 00 00`, max HP 6 with the Earth Crest — measured. But
-`$8D` is still `$00`, so the game starts in the Somulo arena regardless.
+`$84:C18F` is the start of the password path's *setup* phase. Everything above
+it decodes the password and is not wanted:
 
-**Why: a new game never reaches the `$84:C1EF` gate.** That gate is on the
-*password* path only. Two different tests for "has the intro been finished"
-exist:
+```
+$84:C178  TXA / CLC / ADC #$0004 / STA $1E50   ; 4 + HP-up count
+$84:C182  STA $1062 / STZ $1061
+$84:C188  LDA $15 / AND #$0F / STA $1E58       ; from the password
+$84:C18F  STZ $0EA6                            <- enter here
+$84:C192  ... resets, clears $1E30-$1E39 and $1000-$107F ...
+$84:C1BB  LDA $1E50 / STA $1062                ; HP re-derived from our block
+$84:C1EF  LDA $1E54 / AND #$01                 ; -> overworld
+```
 
-| Path | Test | Effect |
-|------|------|--------|
-| password apply, `$84:C1EF` | `$1E54` bit 0 (Somulo HP-up) | overworld, else area 0 |
-| `$84:8557` | `$1E51` bit 4 (**Earth Crest**) plus an area check | keeps you in the intro when absent |
+Nothing is lost by skipping `$84:C182`: the `$1000` clear at `$84:C1B3` covers
+`$1061`/`$1062` and HP is re-derived at `$84:C1BB`. Entering at the setup's
+start rather than further down is the lesson the death probe taught.
 
-and separately `$84:88E2` writes `$8D = 0` unconditionally. So skipping the
-intro on a fresh start needs the dispatch changed too, not just progress.
+**Measured:** a new game reaches `$8D = $BC`, state `$10`, with
+`06 10 00 00 03 00 00 00 00`, max HP 6, current HP 6, Earth Crest held. The
+screen is the overworld map with stage markers I to IV — exactly the stages
+available at that progress — and Firebrand on marker I.
 
-**Options, none implemented:**
+Incidentally, `$84:C178`'s `TXA / CLC / ADC #$0004` is the `4 + HP-up count`
+rule implemented in the ROM, confirming from code what `tools/state.py` derived
+from data.
 
-1. Find what dispatches a new game into area 0 and change the state it passes
-   to `$80:829B` from `$04` to `$10`. Cleanest, but the site is not yet
-   located — `$84:8570` looked like it and is gated on the Earth Crest, which
-   the written block already satisfies, so it is not the one that ran.
-2. Reuse the proven exit — let the new game start in area 0 and exit from it.
-   **Attempted and not working; see below.**
+**Superseded:** `boot_overworld.asm` wrote the block at the init but still
+started in area 0, since a new game never reaches the `$84:C1EF` gate.
+`boot_exit_combo.asm` tried to exit from area 0 and failed at three hook sites.
+Both are kept as recorded negative results.
 
-### Option 2 attempted: the exit does not work from area 0
-
-`src/asm/experiments/boot_exit_combo.asm` combines the boot hook with the exit
-hotkey. The boot half works: a new game starts carrying
-`06 10 00 00 03 00 00 00 00`, max HP 6 with the Earth Crest, confirmed on screen
-in the Somulo arena. The exit half never fires, through three attempts:
-
-| Attempt | Result |
-|---|---|
-| Level-loop hook at `$80:B8F5` | Never runs in area 0. `$0086`, which the hook writes every frame, stayed `$00`, and `$0073` is incremented at `$80:A90B` there rather than `$80:B8FA`. |
-| Hook `$80:A8EE` (`LDA $00F9 / CMP #$1A`) in the intro loop | Never runs either — a marker at `$7F:C700` stayed `$00`, so the loop branches around that path. |
-| Hook `$80:A90B` (`INC $0073`), the site the watch actually observed | Runs — `$0073` advances, and the game does not hang — but the hotkey branch is never taken, with either an edge test on `$0094` or a held test on `$0090`. |
-
-The likely reason the last one fails is cadence: `$0073` advances 152 times
-across 1338 frames in area 0, about once every nine frames. A one-frame edge at
-`$0094` would nearly always be missed, but a *held* test should not be, so the
-model of area 0 is wrong in some further way. `$80:A90B` is the only site that
-touches `$0073` during the intro, so either that loop is a wait or cutscene loop
-and area 0's real per-frame path does not use `$0073`, or the hook is running in
-a context where the pad words are not what they are elsewhere.
-
-**Unresolved. Area 0's loop structure needs mapping properly** — the same
-treatment `$0073` gave the level loop, but against something area 0 actually
-updates every frame — before either option can be finished. Option 1, locating
-the new-game dispatch and passing `$10` instead of `$04`, is untouched and may
-now be the shorter path.
+**Not tested:** entering a stage directly from the boot overworld. `Y` at the
+starting position does nothing, consistent with needing to reach a marker
+first; fly-then-`Y` is already proven from a normally reached overworld.
 
 ### `$0EA6` is a table lookup
 
