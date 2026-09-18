@@ -27,6 +27,11 @@ $(CONFIG): $(ROM) tools/romcheck.py
 ## Build the practice ROM by patching a copy of the verified source ROM.
 rom: $(OUT)
 
+# A failed asar run would otherwise leave the unpatched copy sitting at $(OUT),
+# which looks exactly like a successful build and has already been mistaken for
+# one. Delete it so a failure cannot masquerade as a patched ROM.
+.DELETE_ON_ERROR:
+
 $(OUT): $(ASM) $(CONFIG) $(wildcard src/asm/*.asm)
 	@mkdir -p $(BUILD)
 	cp "$(ROM)" $(OUT)

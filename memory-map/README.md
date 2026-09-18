@@ -21,7 +21,10 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |000096 |2|Binary|Controller 2 held|
 |000098 |2|Binary|Controller 2 held, previous frame|
 |00009A |2|Binary|Controller 2 newly pressed|
+|0000A0 |1|Unsigned|INIDISP shadow (screen on + brightness)|The NMI writes it straight to `$2100` at `$80:83C8`, every frame, so the hardware register follows this byte rather than anything written to `$2100` directly. Force `$2100` and the next NMI overrides you. Fades ramp this
+|0000B7 |1|Binary|HDMAEN shadow|The NMI writes it to `$420C` at `$80:83CD`, every frame, so HDMA channel enables are rebuilt from here. This is why disabling HDMA from injected code is safe - the game turns its own channels back on next frame
 |0000C0 |1|Unsigned|Viewport Something ?
+|0000FA |1|Unsigned|NMI tail dispatch index x 2|`$80:83BD` does `LDX $FA` then `JMP ($83C2,X)`, choosing which NMI tail routine runs. Entry 0 (`$80:83C6`) is the one that refreshes `$2100` from `$00A0` and `$420C` from `$00B7`
 |000300 |512|-|CGRAM shadow|256 colours, loaded verbatim from ROM bank `$99` at `$99:AB40 + id x $C0`. `$7F:A000` holds a second copy
 |000E54 |2|Unsigned|Level loop exit condition|`$80:B8FD` leaves the gameplay loop when `$0E54 | $0E55` is non-zero
 |000E56 |1|Unsigned|Current area ID x 2, second copy|Written alongside `$8D` at `$85:B0C2`

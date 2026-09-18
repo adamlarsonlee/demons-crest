@@ -522,3 +522,47 @@ refusing menu; the reporter's bus dumps show `$70:1FFF` incrementing while
 saved copy of WRAM `$7E:1FFF`, so a damage event after a save nudges one byte of
 the saved state. The save state should move its banks up to `$71`-`$77` and
 leave `$70` as a sacrificial bank.
+
+## Save-state PPU and DMA handling
+
+Three changes made while chasing visual corruption after a load. **The first two
+are reasoned, not verified** - this harness cannot exercise save states at all,
+because the pinned snes9x core does not map SRAM into CPU space for this
+cartridge (`docs/emulators.md`), so every claim here about their effect rests on
+reading the game's code rather than on observing a fix.
+
+**SRAM banks moved to `$71`-`$77`, leaving `$70` unused.** The copier check at
+`$80:8746` and `$80:E543` reads, increments and rewrites `$70:1FFF` whenever it
+runs, and that byte used to hold saved WRAM `$7E:1FFF` - so ordinary play was
+corrupting a saved state a byte at a time. Bank `$70` is now sacrificial, and
+also holds the DMA register stash below.
+
+**HDMA disabled for the duration of the copy** (`$420C = $00`). Both directions
+drive DMA channel 1, and active HDMA keeps firing while we use that channel.
+Leaving it off is safe, and this is the part that is measured: the NMI handler
+calls `$80:83BD` from `$80:83AB`, which reaches `LDA $B7 / STA $420C` at
+`$80:83CD`, so HDMAEN is rebuilt every frame from the WRAM shadow `$00B7` - and
+a state restore supplies that shadow, because it lives in the WRAM being copied
+back.
+
+**Brightness restored from the game's shadow `$00A0`, not a hardcoded `$0F`.**
+The same NMI tail does `LDA $A0 / STA $2100` at `$80:83C8`, so `$2100` follows
+`$00A0` regardless of what the epilogue writes. Forcing `$0F` only fought the
+game for one frame and discarded a mid-fade brightness the restore had just
+put back.
+
+**DMA channel 1's registers saved and restored** around both transfers.
+`$4310`-`$431A` are clobbered by the copy, and games commonly program DMAP and
+BBAD once at init and rewrite only the address and size per frame, so leftover
+values send the game's next transfer to the wrong PPU register. Unlike the PPU
+registers these are readable, so they are stashed at `$70:0010` and put back.
+WRAM could not hold the stash, since the load overwrites all of it.
+
+### Still open
+
+Visual corruption after a load was reported against v0.8 as "different, not
+fixed", and after a save-then-load a Select+Start exit faded to black and stayed
+black. Neither is reproducible here. What would separate the remaining causes is
+Mesen's CGRAM viewer after a glitched load: if CGRAM itself is wrong the fault is
+in the transfer, and if CGRAM is correct while the screen is not, it is register
+state - different fixes.

@@ -13,7 +13,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 7
+!version_minor = 9
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -46,6 +46,7 @@ practice_signature:
 !vmdatalr      = $002139
 !cgadd         = $002121
 !nmitimen      = $004200
+!hdmaen        = $00420C
 
 !password_tail = $84C18F        ; the password path's setup phase
 !exit_entry    = $80BB07        ; the exit-area routine's real entry
@@ -219,10 +220,10 @@ level_hook:
     PHB
     JSR ss_prologue
     REP #$30
-    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $70,$7E
-    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $71,$7E
-    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $72,$7F
-    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $73,$7F
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $71,$7E
+    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $72,$7E
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $73,$7F
+    LDX #$8000 : LDY #$0000 : LDA #$7FFF : MVN $74,$7F
     SEP #$30
     JSR vram_to_sram
     JSR cgram_to_sram
@@ -234,10 +235,10 @@ level_hook:
     PHB
     JSR ss_prologue
     REP #$30
-    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7E,$70
-    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7E,$71
-    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7F,$72
-    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7F,$73
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7E,$71
+    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7E,$72
+    LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7F,$73
+    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7F,$74
     SEP #$30
     JSR sram_to_vram
     JSR sram_to_cgram
@@ -250,10 +251,15 @@ level_hook:
 ;   (((Address & $ff0000) >> 1) | (Address & $7fff)) & SRAMMask
 ; so each bank from $70 owns a distinct 32 KB window:
 ;
-;   WRAM $7E:0000-$7FFF <-> $70     VRAM $0000-$7FFF <-> $74
-;   WRAM $7E:8000-$FFFF <-> $71     VRAM $8000-$FFFF <-> $75
-;   WRAM $7F:0000-$7FFF <-> $72     CGRAM            <-> $76
-;   WRAM $7F:8000-$FFFF <-> $73                  = 192.5 KB of 512 KB
+;   WRAM $7E:0000-$7FFF <-> $71     VRAM $0000-$7FFF <-> $75
+;   WRAM $7E:8000-$FFFF <-> $72     VRAM $8000-$FFFF <-> $76
+;   WRAM $7F:0000-$7FFF <-> $73     CGRAM            <-> $77
+;   WRAM $7F:8000-$FFFF <-> $74                  = 192.5 KB of 512 KB
+;
+; Bank $70 is deliberately left unused. The cartridge's copier check at
+; $80:8746 and $80:E543 reads, increments and rewrites $70:1FFF every time it
+; runs, so anything the state kept there would be corrupted a byte at a time by
+; ordinary play. It used to hold WRAM $7E:1FFF.
 ;
 ; NMI is off for the whole copy, because MVN is interruptible and an NMI
 ; landing on a half-restored stack would push onto corrupt memory. Forced blank
@@ -268,14 +274,55 @@ ss_prologue:
     SEP #$20
     LDA #$00
     STA.l !nmitimen
+    ; HDMA off for the duration. Both directions drive DMA channel 1, and active
+    ; HDMA keeps firing while we are using that channel. RockmanX2Practice does
+    ; the same around its load.
+    ;
+    ; Safe to leave off: $420C is write-only, but the game does not rely on it
+    ; persisting. Its NMI calls $80:83BD (from $80:83AB), which reaches
+    ;   $80:83C6  LDA $A0 / STA $2100
+    ;   $80:83CB  LDA $B7 / STA $420C
+    ; so both brightness and HDMAEN are rewritten every frame from the WRAM
+    ; shadows $00A0 and $00B7 - and the state restore supplies those, because
+    ; they are inside the WRAM it copies back.
+    STA.l !hdmaen           ; A is still #$00 from the NMI store above
+    ; Stash DMA channel 1's registers before either transfer overwrites them.
+    SEP #$20
+    LDX #$00
+.save_dma:
+    LDA.l $004310,X
+    STA.l $700010,X
+    INX
+    CPX #$0B
+    BNE .save_dma
     LDA #$8F
     STA.l !inidisp
     RTS
 
 ss_epilogue:
     SEP #$30
-    LDA #$0F
+    ; Brightness comes from the game's own shadow at $00A0, not a hardcoded
+    ; $0F. On a load that shadow has just been restored, so this leaves the
+    ; screen exactly as it was when the state was saved - mid-fade included.
+    ; Forcing $0F here fought the game for the one frame before its NMI wrote
+    ; $2100 from $00A0 itself.
+    LDA.l $7E00A0
     STA.l !inidisp
+    ; Restore DMA channel 1, which both transfers clobber. Games commonly set
+    ; DMAP and BBAD once and only rewrite the address and size per frame, so
+    ; leaving our values there sends the game's next transfer to the wrong PPU
+    ; register. Unlike the PPU registers these are readable, so they can be
+    ; saved and put back properly. The stash is in SRAM bank $70, which the
+    ; state does not use - WRAM would not survive the restore that overwrites
+    ; it.
+    SEP #$20
+    LDX #$00
+.restore_dma:
+    LDA.l $700010,X
+    STA.l $004310,X
+    INX
+    CPX #$0B
+    BNE .restore_dma
     LDA #$B1
     STA.l !nmitimen
     RTS
@@ -296,13 +343,13 @@ vram_to_sram:
     REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
     LDA.l !vmdatalr                 ; required dummy read
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$74 : STA.l $004314
+    LDA #$75 : STA.l $004314
     REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
     LDA.l !vmdatalr
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$75 : STA.l $004314
+    LDA #$76 : STA.l $004314
     REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     RTS
@@ -314,12 +361,12 @@ sram_to_vram:
     LDA #$18 : STA.l $004311        ; BBAD = $2118, VRAM write
     REP #$20 : LDA #$0000 : STA.l !vmaddl : SEP #$20
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$74 : STA.l $004314
+    LDA #$75 : STA.l $004314
     REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     REP #$20 : LDA #$4000 : STA.l !vmaddl : SEP #$20
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$75 : STA.l $004314
+    LDA #$76 : STA.l $004314
     REP #$20 : LDA #$8000 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     RTS
@@ -330,7 +377,7 @@ cgram_to_sram:
     LDA #$80 : STA.l $004310        ; DMAP: B->A, byte, one register
     LDA #$3B : STA.l $004311        ; BBAD = $213B, CGRAM read
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$76 : STA.l $004314
+    LDA #$77 : STA.l $004314
     REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     RTS
@@ -341,7 +388,7 @@ sram_to_cgram:
     LDA #$00 : STA.l $004310        ; DMAP: A->B, byte, one register
     LDA #$22 : STA.l $004311        ; BBAD = $2122, CGRAM write
     REP #$20 : LDA #$0000 : STA.l $004312 : SEP #$20
-    LDA #$76 : STA.l $004314
+    LDA #$77 : STA.l $004314
     REP #$20 : LDA #$0200 : STA.l $004315 : SEP #$20
     LDA #$02 : STA.l $00420B
     RTS
