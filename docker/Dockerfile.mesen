@@ -1,0 +1,8 @@
+# Adds MesenCE's runtime dependencies to the build image. MesenCE initialises
+# its Avalonia GUI even in --testrunner mode, so it needs fontconfig, SDL2 and
+# a virtual X display. xauth is required by xvfb-run itself.
+FROM demons-crest-build
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends \
+      libfontconfig1 libsdl2-2.0-0 xvfb xauth \
+ && rm -rf /var/lib/apt/lists/*
