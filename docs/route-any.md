@@ -117,10 +117,29 @@ listing both `0 Somulo arena` and `17 Somulo exit` fits the Initial Stage being
 the Somulo fight plus an exit section, separate from the S1_1-S1_3 sections you
 return to.
 
+**Resetting progress does not bring area 0 back.** Tested, because it was worth
+hoping for: with `$1E50`-`$1E58` written back to `04 00 00 00 00 00 00 00 00` on
+the overworld, entering destination 0 still loads area 1, not area 0. The
+progress override at the load entry is narrow — `$85:B0A1` requires tier 2 *and*
+destination 6 — so nothing redirects destination 0.
+
 The consequence for the practice ROM: offering "Initial Stage" as a stage-select
 entry would **not** give the Somulo fight. Practising that specific fight needs
 a new game with `$1E54` bit 0 clear, which is the one case where booting to the
-overworld is the wrong behaviour.
+overworld is the wrong behaviour. Usefully, that is also the *default* — so the
+practice ROM's Somulo option is simply "do not write a route block", and every
+other option writes one.
+
+### Writing the progress block before entry works
+
+The core of the route-state feature is validated. Poking `$1E50`-`$1E58` on the
+overworld and then entering a stage produces a clean load that reflects the new
+state: with the block reset to `$04 00 ...`, area 1 loaded normally and the HP
+bar showed **4 pips instead of 20**, i.e. `$1E50` reached `$1062` through
+`$85:B097` as expected, with no corruption of graphics or state.
+
+So the mechanism the stage-select presets depend on — write the block, then let
+the game load the stage — needs no hook beyond the write itself.
 
 **Not established:** stage 1's section layout. Holding Right for 700 frames in
 area 1 never changed `$8D`, though Firebrand did move — the section is either
