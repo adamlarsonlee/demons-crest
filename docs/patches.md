@@ -59,6 +59,18 @@ $84:8908  8D 50 1E      STA $1E50     ; max HP 4
 **What the injected code does.** Copies a nine-byte progress block over
 `$1E50`-`$1E58`, then jumps to `$84:C18F`.
 
+**The block is the route's FINAL state, not its opening one** —
+`08 16 00 00 07 01 00 00 00`, taken from the `overworld-castle` route dump. The
+overworld only offers a stage once the progress to reach it exists, and the
+castle specifically stays hidden until Flier is dead. Booting with the final
+block makes every route stage selectable. The player never actually plays with
+that generous state, because the preset hook (change 3) writes the correct
+per-stage progress when a stage is entered.
+
+Measured: switching the boot block from the Town state to the final state
+changes the overworld map in 356 of 172,256 pixel bytes, confined to rows
+94-105 — one new marker appearing rather than a redraw.
+
 **Why.** The original two instructions set a fresh game's max HP to 4; the
 block we write includes `$1E50`, so it subsumes them. The seven `STZ`
 instructions just above the slot have already cleared `$1E51`-`$1E57`, which is

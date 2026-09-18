@@ -12,7 +12,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 2
+!version_minor = 3
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -59,6 +59,9 @@ assert read1($85B09A) == $8D, "preset hook: expected STA $1062 at $85:B09A"
 ; knows how to put a player on the overworld with arbitrary progress. Its tail
 ; tests $1E54 bit 0 — the Somulo upgrade, i.e. "Initial Stage finished" — and
 ; dispatches to the overworld when set.
+;
+; The block written here is the route's final state, not its opening one - see
+; block_boot below for why.
 ; ---------------------------------------------------------------------------
 org $848906
     JSL boot_hook
@@ -69,7 +72,7 @@ boot_hook:
     SEP #$30                    ; 8-bit A and X, as the password tail expects
     LDX #$00
 .copy:
-    LDA.l block_town,X
+    LDA.l block_boot,X
     STA.l !progress_base,X
     INX
     CPX #!block_size
@@ -187,8 +190,15 @@ preset_hook:
 ; rather than derived. Max HP is 4 + the number of HP-up bits, which is why
 ; these are authentic values and not hand-picked bits.
 ; ---------------------------------------------------------------------------
-block_town:
-    db $06, $10, $00, $00, $03, $00, $00, $00, $00
+; The block a new game boots with. This is the route's FINAL state - after
+; Flier, the last boss before the castle - not its opening state. The overworld
+; only offers a stage once the progress to reach it exists, and the castle in
+; particular is unavailable until Flier is dead. Booting with the final block
+; makes every route stage selectable; the preset hook then writes the correct
+; per-stage progress on entry, so the generous boot state is never played with.
+; Taken from the overworld-castle route dump.
+block_boot:
+    db $08, $16, $00, $00, $07, $01, $00, $00, $00
 
 ; Indexed by destination, stride 16. First byte of each entry: $01 apply,
 ; $00 skip. Destinations 4 and 5 are stages the Any% route never enters.
