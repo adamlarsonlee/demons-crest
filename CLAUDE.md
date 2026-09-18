@@ -27,6 +27,17 @@ deliverable. Don't propose emulator-side Lua features as the product.
   copying WRAM, VRAM and CGRAM into a 512KB SRAM window and changing the
   header's SRAM size. Demon's Crest has no SRAM, so this needs the same header
   change. Not started, and it interacts with the 4MB decision below.
+
+  **Measured, via `src/asm/experiments/sram_probe.asm`:** declaring SRAM in the
+  header does make the emulator provide it, so this is developable headlessly
+  and needs no flash cart. But the core honours the size **only up to 128KB**
+  ($03 -> 8192, $05 -> 32768, $07 -> 131072, $08 and $09 -> 131072). 128KB is
+  exactly the size of WRAM, so there is no room for VRAM beside it and X2's
+  scheme does not fit.
+
+  That points at a different design: save **WRAM only**. For practice that may
+  be enough — restoring within the same area means VRAM already holds the right
+  graphics, which is why X2 needed VRAM and we might not. Untested.
 - **4MB expansion.** The ROM has no contiguous free region over 891 bytes, so
   practice code needs the ROM expanded 2MB -> 4MB. Deferred pending a
   conversation about playability across FXPak Pro, other flashcarts and
