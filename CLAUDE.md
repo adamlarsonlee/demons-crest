@@ -17,12 +17,16 @@ deliverable. Don't propose emulator-side Lua features as the product.
 | **Japanese ROM** (Demon's Blazon) | `memory-map/README.md` is JP-only and warns the English ROM differs. The repo's prior research is all JP. |
 | **True ASM hack, not a Lua harness** | Must run on a physical SNES. This rules out savestate-based practice. |
 | **asar**, not bass | RockmanXPractice pins bass v10, whose macro syntax the v18 that builds on macOS rejects (verified). asar is native, maintained, one brew command — and is in the container. |
-| **State blocks**, per RockmanXPractice | Hardware can't do savestates, so progress is hardcoded RAM blocks written on warp. Validated: writing `$1E50`-`$1E57` into another save gives a pixel-identical item menu. |
+| **State blocks**, per RockmanXPractice | Progress is hardcoded RAM blocks written on warp. Validated: writing `$1E50`-`$1E57` into another save gives a pixel-identical item menu. **The stated reason — "hardware can't do savestates" — is wrong**; `RockmanX2Practice` does them on real hardware by adding SRAM via the header. State blocks are still the right way to set *route progress*; whether to also add a save state is now an open question, not a closed one. See `docs/references.md`. |
 | **Container for everything** | The host is a company-managed Mac. asar and a patched libretro core both live in the image; nothing needs installing. |
 | **Any% first** | Route scope agreed up front. Boss Rush and 100% later. |
 
 ## Open decisions
 
+- **Save/load state.** `RockmanX2Practice` implements one on hardware by
+  copying WRAM, VRAM and CGRAM into a 512KB SRAM window and changing the
+  header's SRAM size. Demon's Crest has no SRAM, so this needs the same header
+  change. Not started, and it interacts with the 4MB decision below.
 - **4MB expansion.** The ROM has no contiguous free region over 891 bytes, so
   practice code needs the ROM expanded 2MB -> 4MB. Deferred pending a
   conversation about playability across FXPak Pro, other flashcarts and
@@ -199,6 +203,8 @@ Keep these current — they are the project's memory:
 - `docs/recon.md` — recon targets, findings, **closed leads**, methods
 - `docs/areas.md` — the 116-slot area table and randomizer-derived facts
 - `docs/passwords.md` — working passwords and how to enter them headlessly
+- `docs/references.md` — reference practice ROMs, what each contributes, and
+  where their approach does not transfer
 - `memory-map/README.md` — the canonical RAM map
 
 Record negative results. Knowing what an address *isn't* is worth as much as
@@ -230,6 +236,11 @@ feels like.
   proven claims — verify before relying on a label.
 - `abyssonym/demons_crest_hacking` — level data *structure*. Its addresses are
   **USA file offsets**, confirmed; treat as a guide to format, not to addresses.
+- `Myriachan/RockmanX2Practice` — the closest mirror of this project's intended
+  feature set: route selection, per-stage item presets behind a pointer table,
+  save/load state, quick death by writing a play-state variable. Read
+  `docs/references.md` before designing a feature; it records what transfers
+  and what does not.
 
 ## Conventions
 
