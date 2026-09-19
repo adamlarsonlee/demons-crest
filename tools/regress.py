@@ -135,6 +135,24 @@ def static_checks(rom_path, source_path):
     have = rom.find(bytes([0xA9, 0xFD, 0x7F]))
     check("load leaves $7F:FFFE-$FFFF alone (LDA #$7FFD before an MVN)", have > 0)
 
+    # A bisect variant with one transfer commented out once shipped as a
+    # release, because nothing here noticed the missing call. The load path ends
+    # in exactly three JSRs: sram_to_vram, sram_to_cgram, ss_epilogue. Count the
+    # JSR opcodes in the window after the last MVN setup.
+    if have > 0:
+        window = rom[have:have + 64]
+        jsrs = sum(1 for i in range(len(window) - 2)
+                   if window[i] == 0x20 and window[i + 2] in (0xA5, 0xA6, 0xA7))
+        check("load calls all three of VRAM, CGRAM and epilogue", jsrs == 3,
+              f"found {jsrs} JSR(s) after the load's MVNs")
+
+    # Both transfer directions must exist for CGRAM: BBAD $3B reads it, $22
+    # writes it. A missing one means the palette is not part of the state.
+    for bbad, what in ((0x3B, "CGRAM read ($213B)"), (0x22, "CGRAM write ($2122)"),
+                       (0x39, "VRAM read ($2139)"), (0x18, "VRAM write ($2118)")):
+        pat = bytes([0xA9, bbad, 0x8F, 0x11, 0x43])
+        check(f"transfer set up for {what}", rom.find(pat) > 0)
+
 
 # ---------------------------------------------------------------------------
 def scenario_boot_and_menu(rom):

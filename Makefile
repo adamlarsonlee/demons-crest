@@ -5,7 +5,7 @@ CONFIG := $(BUILD)/rom_config.inc
 LOCK  := rom.lock
 ASM   := src/asm/patch.asm
 
-.PHONY: all verify rom patch dist test clean distclean docker-image docker-rom docker-shell docker-shot docker-dist docker-test
+.PHONY: all verify rom patch dist test release clean distclean docker-image docker-rom docker-shell docker-shot docker-dist docker-test
 
 all: rom
 
@@ -60,6 +60,18 @@ $(DIST): $(BUILD)/DemonsBlazon_Practice.ips tools/mkhtml.py tools/patcher.html.i
 test: $(OUT)
 	python3 tools/regress.py $(OUT)
 
+## What a release must go through. Builds from scratch so an experiment left
+## in $(BUILD) cannot be shipped, runs the suite, and only then packages. A
+## bisect variant with one transfer commented out was once delivered as a
+## release because the artifact was whatever happened to be sitting in $(BUILD).
+release: clean
+	$(MAKE) rom
+	$(MAKE) test
+	$(MAKE) dist
+	@echo
+	@echo "release artifact: $(DIST)"
+	@shasum -a 1 $(OUT) $(DIST)
+
 clean:
 	rm -rf $(BUILD)
 
@@ -91,6 +103,9 @@ docker-dist:
 
 docker-test:
 	$(DOCKER_RUN) make test
+
+docker-release:
+	$(DOCKER_RUN) make release
 
 docker-shot:
 	$(DOCKER_RUN) python3 tools/headless.py $(SHOT) --frames $(FRAMES) --dump $(DUMP)
