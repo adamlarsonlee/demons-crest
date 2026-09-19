@@ -13,7 +13,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 10
+!version_minor = 11
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -289,15 +289,6 @@ ss_prologue:
     ; that state left the screen black permanently, which is what a stage exit
     ; after a load did.
     STA.l !hdmaen           ; A is still #$00 from the NMI store above
-    ; Stash DMA channel 1's registers before either transfer overwrites them.
-    SEP #$20
-    LDX #$00
-.save_dma:
-    LDA.l $004310,X
-    STA.l $700010,X
-    INX
-    CPX #$0B
-    BNE .save_dma
     LDA #$8F
     STA.l !inidisp
     RTS
@@ -317,21 +308,22 @@ ss_epilogue:
     ; the NMI: entry 2 of the NMI tail never writes $420C.
     LDA.l $7E00B7
     STA.l !hdmaen
-    ; Restore DMA channel 1, which both transfers clobber. Games commonly set
-    ; DMAP and BBAD once and only rewrite the address and size per frame, so
-    ; leaving our values there sends the game's next transfer to the wrong PPU
-    ; register. Unlike the PPU registers these are readable, so they can be
-    ; saved and put back properly. The stash is in SRAM bank $70, which the
-    ; state does not use - WRAM would not survive the restore that overwrites
-    ; it.
-    SEP #$20
-    LDX #$00
-.restore_dma:
-    LDA.l $700010,X
-    STA.l $004310,X
-    INX
-    CPX #$0B
-    BNE .restore_dma
+    ; Channel 1's registers are deliberately NOT restored. An earlier version
+    ; stashed $4310-$431A in the prologue and put them back here, on the theory
+    ; that a game which programs DMAP and BBAD once at init would otherwise send
+    ; its next transfer to the wrong PPU register. That theory cost a bug.
+    ;
+    ; $4318/$4319 are the HDMA table pointer. On a load the stash holds
+    ; *pre-load* values, so putting them back re-arms channel 1 against a table
+    ; that the WRAM restore has just moved out from under it - and the line
+    ; above then switches HDMA on. Garbage goes to a PPU register every
+    ; scanline. It is load-specific by construction, because on a save the
+    ; pre- and post-copy values are the same, and it matched the report exactly:
+    ; save alone fine, load then any transition out of the level giving a black
+    ; screen with the stage music still playing, i.e. a wedged CPU.
+    ;
+    ; The game reprograms the channel when it next needs it, which is what
+    ; v0.7 relied on before any of this was added.
     LDA #$B1
     STA.l !nmitimen
     RTS

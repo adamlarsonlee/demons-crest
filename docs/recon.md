@@ -1700,3 +1700,67 @@ emulator that honours the header.
 | Damage breaks the live form at `$1054` | write watch through damage identical on clean and patched |
 | `$1E51 = $00` is an invalid weapon state | an authentic fresh game plays the Initial Stage with `$1E50-$1E58 = 04 00 00 00 00 00 00 00 00` |
 | The route presets stripping progress bits | a build with every validity byte cleared still reproduces it |
+
+
+## Black screen on any transition out of a level after a load — REPRODUCED, open
+
+Reported on MesenCE and now **reproducible in this harness**, which is the first
+time any save-state fault has been. The recipe matters: it only appears if the
+player **moves between the save and the load**. Earlier attempts saved and
+loaded from the same spot, where the restore is nearly a no-op, and saw nothing.
+
+```sh
+# enter a level, save, move right 400 frames, load, then exit
+python3 tools/headless.py build/DemonsBlazon_Practice.sfc \
+  --load-state states/title.state --press "<boot>,<save>,<400 frames right>,<load>,<exit>" \
+  --frames 7200 --dump 5350,5500,6000,6600,7199
+```
+
+Screen brightness, mean pixel value:
+
+| frame | save, move, **load**, exit | save, move, exit (no load) |
+|---|---|---|
+| 5350 | 0.0 | 0.0 (the fade) |
+| 5500 | 0.0 | 57.4 (overworld) |
+| 7199 | **0.0** | 39.0 |
+
+Present in **v0.7 as well**, so it predates the HDMA and DMA-register changes of
+v0.8-v0.10 rather than being caused by them. The reporter saw v0.7 survive
+because that test did not move far before loading.
+
+### What it is, measured
+
+The transition **completes**: `$0036` is `$10` (overworld) and `$8D` is `$BC` in
+both runs. What differs at 600 frames after the exit press:
+
+| | healthy | broken |
+|---|---|---|
+| `$00A0` INIDISP shadow | `$0F` | **`$80`** — forced blank |
+| `$0030` task status | `$01` | `$02` |
+| `$00A2`, `$00A6`, `$00C0`, `$00C4` | populated address/size pairs | **all zero** |
+
+So the overworld loads, its graphics upload is never queued, and `$00A0` stays
+at forced blank - which the NMI faithfully copies into `$2100` every frame,
+hence a permanently black screen. The stage music keeps playing because the APU
+plays the last commanded track on its own.
+
+Comparing who writes `$00A0` after the exit isolates one routine present only in
+the healthy run: **`STZ $00A0` at `$85:AF2C`**, which the game's own transition
+uses to park the fade at zero before loading the next mode's graphics. The
+broken run never reaches it, and instead has a single write from `$BE:8590`.
+
+### Falsified
+
+- **Restoring DMA channel 1's registers causes it.** Removing that (v0.11)
+  changes nothing. The theory was that `$4318`/`$4319`, the HDMA table pointer,
+  were being re-armed with pre-load values; plausible, and wrong.
+- **Doing what the healthy path does, from our exit hook.** Adding
+  `LDA #$00 / STA.l $7E00A0` to the exit before the `JML` leaves it just as
+  black, so `$00A0` is a symptom rather than the lever.
+
+### Next
+
+Find why the exit takes a different route after a load - the `$BE:8590` write is
+the visible fork. Note that a fix in the exit hook alone cannot be enough: the
+reporter sees the same black screen **on death**, which does not go through our
+code at all, so the cause is in the restored state, not in the exit path.
