@@ -13,7 +13,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 9
+!version_minor = 10
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -278,13 +278,16 @@ ss_prologue:
     ; HDMA keeps firing while we are using that channel. RockmanX2Practice does
     ; the same around its load.
     ;
-    ; Safe to leave off: $420C is write-only, but the game does not rely on it
-    ; persisting. Its NMI calls $80:83BD (from $80:83AB), which reaches
-    ;   $80:83C6  LDA $A0 / STA $2100
-    ;   $80:83CB  LDA $B7 / STA $420C
-    ; so both brightness and HDMAEN are rewritten every frame from the WRAM
-    ; shadows $00A0 and $00B7 - and the state restore supplies those, because
-    ; they are inside the WRAM it copies back.
+    ; It must be turned back on by us, in the epilogue. An earlier version left
+    ; it off on the theory that the NMI rebuilds it every frame. That is only
+    ; true of one branch: the NMI tail at $80:83BD dispatches on $00FA through
+    ; a two-entry table, and only entry 0 ($80:83C6) does
+    ;   LDA $A0 / STA $2100  and  LDA $B7 / STA $420C.
+    ; Entry 2 ($80:83D6) force-blanks the screen ($2100 = $80), arms an H/V IRQ
+    ; and copies $B7 to $0EE6 without ever writing $420C - that branch draws by
+    ; raster effect and depends on HDMA. Leaving HDMA off while the game sat in
+    ; that state left the screen black permanently, which is what a stage exit
+    ; after a load did.
     STA.l !hdmaen           ; A is still #$00 from the NMI store above
     ; Stash DMA channel 1's registers before either transfer overwrites them.
     SEP #$20
@@ -308,6 +311,12 @@ ss_epilogue:
     ; $2100 from $00A0 itself.
     LDA.l $7E00A0
     STA.l !inidisp
+    ; HDMA back on, from the same shadow the game itself uses. $420C cannot be
+    ; read, but $00B7 holds what the game wants in it, and on a load that byte
+    ; has just been restored. This must happen here rather than being left to
+    ; the NMI: entry 2 of the NMI tail never writes $420C.
+    LDA.l $7E00B7
+    STA.l !hdmaen
     ; Restore DMA channel 1, which both transfers clobber. Games commonly set
     ; DMAP and BBAD once and only rewrite the address and size per frame, so
     ; leaving our values there sends the game's next transfer to the wrong PPU

@@ -45,7 +45,7 @@ deliverable. Don't propose emulator-side Lua features as the product.
   | SRAM | What fits | Verifiable in this harness |
   |------|-----------|----------------------------|
   | 128KB (`$07`) | WRAM only, so same-section restores | **yes**, fully |
-  | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **partly** — snes9x maps 128KB, so the 7 banks alias onto 4 windows; single transfers can be checked, a full round trip cannot |
+  | 256KB+ | WRAM + VRAM + CGRAM, X2-style general restores | **yes** — snes9x's mask is `$7FFFF`, so all 7 banks are distinct; only the first 128KB is *visible* through libretro |
 
   **Correction:** this section and `docs/emulators.md` both used to say SRAM was
   unreachable from the CPU in the pinned core, so save states were untestable

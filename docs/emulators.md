@@ -65,26 +65,40 @@ between the reference dump and the save.
 
 Use `tools/headless.py --dump-sram FRAME[,FRAME]`.
 
-### Window size differs per emulator, and that bounds what can be verified
+### Window size: the libretro report is not the mask
 
-The header declares `$09` (512 KB). Nobody honours that literally. The LoROM
-offset is `(((Address & $ff0000) >> 1) | (Address & $7fff)) & SRAMMask`, so the
-mask decides how many 32 KB bank windows are distinct:
+**Correction.** An earlier revision of this section claimed snes9x gives only 4
+distinct 32 KB windows, so banks `$75`-`$77` would alias onto `$71`-`$73` and a
+full round trip could not be verified here. That was wrong. It took the
+`retro_get_memory_size(SAVE_RAM)` figure of 131,072 as the `SRAMMask`, which is
+the same mistake this file warns about at the top - **128 KB is the libretro
+size report, not the emulator's limit.** snes9x's `SRAM_SIZE` is `$80000`, so
+the mask is `$7FFFF` and all seven banks are distinct.
 
-| Emulator | SAVE_RAM | Distinct windows | Effect on a 7-bank, 224 KB state |
+Two pieces of evidence, both already collected:
+
+- Bank `$71`'s window matches WRAM `$7E:0000-$7FFF` in 32,728 of 32,768 bytes
+  after a save. Had `$75` (VRAM) aliased onto it, it would hold VRAM instead.
+- A save followed by a load leaves WRAM differing by 140 bytes and the game
+  running normally. Aliasing would have restored 32 KB of VRAM into low WRAM.
+
+Only the first 128 KB of SRAM is *visible* through the libretro memory API, so
+`--dump-sram` shows banks `$70`-`$73` and nothing above. That limits
+**inspection**, not correctness: the CPU reaches all of it.
+
+| Emulator | Visible via libretro | Distinct windows | 7-bank, 224 KB state |
 |---|---|---|---|
-| snes9x (pinned) | 131,072 | 4 (`$1FFFF` mask) | `$75`-`$77` **alias onto** `$71`-`$73`, so VRAM and CGRAM overwrite the WRAM copy |
-| MesenCE | — | 8, measured | `$71`-`$77` all distinct; `$78` wraps to `$70` |
+| snes9x (pinned) | 131,072 (first 128 KB only) | 16 (`$7FFFF` mask) | fine, no collision |
+| MesenCE | — | 8, measured | fine, `$78` wraps to `$70` |
 
 MesenCE's eight windows were measured from a reporter's 16 MB bus dump by
-comparing the first 4 KB of each bank: `$70` and `$78` are identical and the
-rest differ.
+comparing the first 4 KB of each bank: `$70` and `$78` are identical, the rest
+differ.
 
-So this harness can now **exercise** the save path, dump the result and check
-any single region's transfer, but it **cannot validate a full round trip**,
-because four windows cannot hold seven banks. A full round trip needs an
-emulator with at least 224 KB mapped. Reducing the state to four banks would
-make it fully verifiable here, at the cost of dropping VRAM or CGRAM.
+**So a full save/load round trip *is* verifiable here.** Save and load both run,
+and their effects are observable through `--dump-sram` and `--dump-wram`. What
+is not observable is SRAM above 128 KB, so a VRAM or CGRAM transfer has to be
+checked by its effect rather than by reading the stored bytes.
 
 ## Not investigated
 
