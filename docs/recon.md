@@ -1702,7 +1702,7 @@ emulator that honours the header.
 | The route presets stripping progress bits | a build with every validity byte cleared still reproduces it |
 
 
-## Black screen on any transition out of a level after a load — REPRODUCED, open
+## Black screen on any transition out of a level after a load — SOLVED
 
 Reported on MesenCE and now **reproducible in this harness**, which is the first
 time any save-state fault has been. The recipe matters: it only appears if the
@@ -1764,3 +1764,36 @@ Find why the exit takes a different route after a load - the `$BE:8590` write is
 the visible fork. Note that a fix in the exit hook alone cannot be enough: the
 reporter sees the same black screen **on death**, which does not go through our
 code at all, so the cause is in the restored state, not in the exit path.
+
+### Solved: `$7F:FFFE-$FFFF`
+
+Bisecting the WRAM restore by halves found it. First by bank: restoring only
+`$7F:8000-$FFFF` reproduces it, the other three banks do not. Then by halving
+that 32KB region eleven times, down to **two bytes at `$7F:FFFE-$FFFF`** - a
+stack pointer the game maintains in WRAM (`$80:BC4D` writes it, `$80:BCA4` steps
+it, values always in the `$01xx` stack page). Excluding those two bytes from the
+restore fixes it; restoring only those two bytes reproduces it.
+
+Useful negatives from the same bisection, each one a theory discarded:
+
+| Restored | Result |
+|---|---|
+| nothing at all (prologue + epilogue only) | exits cleanly - so the register handling was never at fault |
+| WRAM only, no VRAM or CGRAM | still black |
+| everything except any one WRAM bank | still black |
+| only `$7E:0000-7FFF`, or `$7E:8000-FFFF`, or `$7F:0000-7FFF` | exits cleanly |
+| only `$7F:8000-FFFF` | **black** |
+
+The method is worth keeping: a black screen is a clean binary signal, so
+bisecting the restore is far cheaper than reasoning about which variable
+matters. `tools/headless.py --dump` plus mean pixel brightness makes it
+scriptable.
+
+## Colour corruption after a load — reproduced, open
+
+Also reproducible now, with a different recipe: it takes **load, then save, then
+load again**. A single save-move-load cycle comes back with the right palette
+(mean RGB within a point or two of the pre-save frame); after the second cycle
+the sky turns magenta. Disabling either the CGRAM restore or the VRAM restore
+changes nothing on a single cycle, so the next step is to bisect the two-cycle
+case the same way the black screen was bisected.

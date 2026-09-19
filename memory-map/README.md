@@ -65,6 +65,7 @@ THIS MEMORY MAP IS FOR THE JAPANESE VERSION - THE ENGLISH ROM HAS DIFFERENT MAPP
 |001E57	|1|Binary|Progress flags, continued|Only the low two bits are used
 |001E58 |1|Binary|Progress, beyond the mapped block|Bit 0 is read by the area-variant selector `$85:9B39`. The progress block is therefore wider than `$1E50`-`$1E57`
 |01A000 |512|-|CGRAM shadow, second copy|Mirrors `$0300`-`$04FF`; why `$0431` and `$1A131` always agree
+|7FFFFE |2|Unsigned|Game's own stack pointer, in WRAM|Written at `$80:BC4D`, stepped at `$80:BCA4`, and always reads inside the `$01xx` hardware stack page (`$0105`, `$0113`, `$011F`, `$012D` across dumps). **A save state must not restore this.** Putting a saved value back wedges the *next* mode transition rather than anything immediate: the stage exit and death both fade to black and stay black, with the stage music still playing, because the next mode is entered but its setup never runs its fade-in. Found by bisecting the restore region from 32KB down to these two bytes
 
 
 # Progress Block Bit Mapping

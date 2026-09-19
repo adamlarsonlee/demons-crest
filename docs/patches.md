@@ -584,6 +584,26 @@ hardware register state that the copy leaves behind, and most PPU registers are
 write-only, so it cannot be read back and restored the way the DMA registers
 can.
 
+### The last two bytes of WRAM must not be restored — fixed in v0.12
+
+`$7F:FFFE-$FFFF` is a stack pointer the game keeps for itself, written at
+`$80:BC4D` and stepped at `$80:BCA4`, always reading inside the `$01xx` hardware
+stack page. Restoring a saved value there wedged the **next** mode transition:
+a stage exit or a death faded to black and stayed black, with the stage music
+still playing, because the overworld was entered but its setup never ran its
+fade-in. The load's fourth `MVN` now copies `$7FFD` bytes instead of `$7FFF`,
+leaving that word alone.
+
+Found by bisection, not by reading code: halve the restored region, run the
+repro, keep the half that still fails. 32KB, 16KB, 8KB, ... down to two bytes.
+Restoring only those two reproduces it; excluding only those two fixes it.
+
+This is the same class of fault `RockmanX2Practice` avoids by saving and
+restoring the hardware `S` register - which v0.12 also now does, following its
+`lda.l {sram_saved_sp} / tas`. Measured, our hook is always entered at the same
+depth (`S` = `$013B` both times), so that part is a no-op here and kept only
+because depth is not guaranteed.
+
 ### Still open
 
 Visual corruption after a load was reported against v0.8 as "different, not

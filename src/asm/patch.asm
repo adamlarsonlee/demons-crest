@@ -13,7 +13,7 @@
 incsrc "../../build/rom_config.inc"
 
 !version_major = 0
-!version_minor = 11
+!version_minor = 12
 
 ; Builds always patch a pristine copy of the ROM, so asar has no prior
 ; allocation to reclaim and its leak warning does not apply. The hooks below
@@ -39,6 +39,7 @@ practice_signature:
 !pad_new_hi    = $7E0095        ; high byte of $0094; Start is bit 4
 !pad_new_lo    = $7E0094        ; low byte of $0094;  R is bit 4, L is bit 5
 !loop_flag     = $7E0086
+!saved_sp      = $700000        ; stack pointer, in the sacrificial SRAM bank
 
 !inidisp       = $002100
 !vmain         = $002115
@@ -218,6 +219,20 @@ level_hook:
 ; ---------------------------------------------------------------------------
 .save:
     PHB
+    ; Record the stack pointer alongside the state. The stack *page* travels
+    ; with WRAM, but S is a CPU register and does not - so a load has to be told
+    ; where in that page the saved frames start. Captured here, after the PHB,
+    ; so a load can restore S, PLB the saved bank and RTL through the saved
+    ; return address, resuming exactly where the save was taken.
+    ;
+    ; RockmanX2Practice does the same: its load ends `lda.l {sram_saved_sp} /
+    ; tas`. Without it the restored stack page is read at whatever depth the
+    ; load happened to be called at, every later RTS/RTL is skewed, and the
+    ; game breaks at its next mode transition rather than immediately.
+    REP #$20
+    TSC
+    STA.l !saved_sp
+    SEP #$20
     JSR ss_prologue
     REP #$30
     LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $71,$7E
@@ -238,11 +253,43 @@ level_hook:
     LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7E,$71
     LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7E,$72
     LDX #$0000 : LDY #$0000 : LDA #$7FFF : MVN $7F,$73
-    LDX #$0000 : LDY #$8000 : LDA #$7FFF : MVN $7F,$74
+    ; $7FFD, not $7FFF: the last two bytes of WRAM are deliberately NOT
+    ; restored. $7F:FFFE-$FFFF holds a stack pointer the game keeps for itself -
+    ; written at $80:BC4D and stepped at $80:BCA4, and always reading in the
+    ; $01xx hardware stack page ($0105, $0113, $011F, $012D across dumps).
+    ;
+    ; Putting a saved value back there wedges the *next* mode transition rather
+    ; than anything immediately visible: the stage exit and death both faded to
+    ; black and stayed black, with the stage music still playing, because the
+    ; overworld was entered but its setup never ran its fade-in. Bisecting the
+    ; restore region by halves, from 32KB down, landed on exactly these two
+    ; bytes - restoring them alone reproduces it, and excluding them alone
+    ; fixes it.
+    ;
+    ; This is the same class of problem RockmanX2Practice solves by saving and
+    ; restoring the hardware S register; this game keeps a second stack pointer
+    ; in WRAM, so the state has to leave that one alone.
+    LDX #$0000 : LDY #$8000 : LDA #$7FFD : MVN $7F,$74
     SEP #$30
     JSR sram_to_vram
     JSR sram_to_cgram
     JSR ss_epilogue
+
+    ; The pad state came back with the rest of WRAM, so it still holds the press
+    ; that triggered the save. Clear the newly-pressed words so the hotkey
+    ; cannot re-fire the moment we return. X2 does the equivalent, forcing the
+    ; load combination to read as held rather than newly pressed.
+    SEP #$20
+    LDA #$00
+    STA.l $7E0094
+    STA.l $7E0095
+
+    ; Last thing before returning: adopt the saved stack pointer, then PLB and
+    ; RTL pop the saved bank and return address. Nothing may push after this.
+    REP #$20
+    LDA.l !saved_sp
+    TCS
+    SEP #$20
     PLB
     RTL
 
