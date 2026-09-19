@@ -558,6 +558,32 @@ values send the game's next transfer to the wrong PPU register. Unlike the PPU
 registers these are readable, so they are stashed at `$70:0010` and put back.
 WRAM could not hold the stash, since the load overwrites all of it.
 
+### The data transfer is verified correct
+
+Measured with the harness once SRAM turned out to be reachable
+(`docs/emulators.md`). In a level: dump VRAM and WRAM, save, move right for 400
+frames so both change, load, dump again.
+
+| | changed while moving | still wrong after the load |
+|---|---|---|
+| VRAM | 1,863 bytes | **0** |
+| WRAM | 1,242 bytes | 134, all churn |
+
+The 134 are not a restore failure. 55 sit in `$7F:F000`-`$F0FF`, a per-scanline
+ramp table the game rebuilds every frame; the rest are the frame counter
+`$0073`, controller state, the stack page, `$1D51`/`$1D53` level-load counters
+and position bytes - everything that legitimately advances in the ~20 frames
+between the copy finishing and the dump. Reproduce with:
+
+```sh
+python3 tools/wramdiff.py before.wram after.wram --all
+```
+
+**So whatever causes the remaining faults is not the copied data.** It is
+hardware register state that the copy leaves behind, and most PPU registers are
+write-only, so it cannot be read back and restored the way the DMA registers
+can.
+
 ### Still open
 
 Visual corruption after a load was reported against v0.8 as "different, not
