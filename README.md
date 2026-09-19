@@ -8,21 +8,28 @@ JP-only; the English ROM has different mappings.
 ## Getting it
 
 There is no downloadable ROM and there never will be. Distribution is an **IPS
-patch** you apply to your own dump of the Japanese release; `make dist` builds
-the folder that gets handed to players:
+patch** applied to your own dump of the Japanese release, wrapped in a single
+self-contained HTML file:
 
 ```sh
-make dist      # -> build/dist/ and build/DemonsCrestPractice.zip
+make dist      # -> build/dist/DemonsCrestPractice.html  (~15 KB, one file)
 ```
 
-That folder holds the patch, `apply.py`, the expected hashes and `PATCHING.md`,
-which is written for someone who has never patched a ROM. Applying the patch
-needs no toolchain and no container — just an IPS patcher, or Python 3 for
-`apply.py`, which verifies the source ROM, strips a copier header if present and
-checks the patched result against a known-good hash.
+That one file is the whole distribution. Open it in any browser — including
+straight off the filesystem, offline — drop in a ROM, and it verifies the source
+against the pinned SHA-1, strips a copier header if there is one, applies the
+patch, checks the result against the hash of the build it came from, and offers
+the patched ROM as a download. Nothing is uploaded and no toolchain, container
+or Python is involved.
 
-The player-facing `README.md` in that folder is generated from the section
-below, so the two cannot drift apart.
+The patch, both hashes and the controls documentation are baked in at build
+time, the last of these lifted from the section below, so the file cannot drift
+from the ROM it was built against. SHA-1 is implemented in JavaScript rather
+than via `crypto.subtle`, because a page opened from `file://` is not a secure
+context in Chrome and `crypto.subtle` is undefined there.
+
+`tools/apply.py` does the same job from a command line if you would rather
+script it, and any ordinary IPS patcher works too — but neither is needed.
 
 ## Using the practice ROM
 
@@ -116,7 +123,7 @@ Requires `asar` (`brew install asar`) and Python 3. Supply your own ROM dump at
 make verify   # identify the ROM, pin its hash, emit the asar mapping include
 make rom      # build build/DemonsBlazon_Practice.sfc
 make patch    # emit a distributable IPS patch
-make dist     # assemble the player folder and zip
+make dist     # the single-file HTML patcher
 ```
 
 `make verify` pins the source ROM's SHA-1 to `rom.lock` so later builds fail
@@ -130,7 +137,7 @@ mounted read-only and never enters the image.
 ```sh
 make docker-image   # one-time
 make docker-rom
-make docker-dist    # patch + player folder + zip
+make docker-dist    # patch + single-file HTML patcher
 make docker-shot    # capture frames to build/frames as PNG
 make docker-shell   # interactive
 ```

@@ -44,13 +44,15 @@ patch: $(BUILD)/DemonsBlazon_Practice.ips
 $(BUILD)/DemonsBlazon_Practice.ips: $(OUT)
 	python3 tools/mkips.py "$(ROM)" $(OUT) $@
 
-## Assemble the folder handed to players: patch, applier, instructions, hashes.
-dist: $(BUILD)/DemonsCrestPractice.zip
+## The whole distribution: one self-contained HTML file. Open it, drop in a
+## ROM, get a verified patched ROM. No toolchain, no container, no Python.
+DIST := $(BUILD)/dist/DemonsCrestPractice.html
 
-$(BUILD)/DemonsCrestPractice.zip: $(BUILD)/DemonsBlazon_Practice.ips tools/mkdist.py \
-		tools/apply.py dist-template/PATCHING.md README.md VERSION
-	python3 tools/mkdist.py --ips $(BUILD)/DemonsBlazon_Practice.ips --rom $(OUT) \
-		--out $(BUILD)/dist --zip $@
+dist: $(DIST)
+
+$(DIST): $(BUILD)/DemonsBlazon_Practice.ips tools/mkhtml.py tools/patcher.html.in \
+		README.md VERSION
+	python3 tools/mkhtml.py --ips $(BUILD)/DemonsBlazon_Practice.ips --rom $(OUT) --out $@
 
 clean:
 	rm -rf $(BUILD)

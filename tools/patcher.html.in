@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demon's Crest Practice Patcher</title>
+<style>
+:root {
+  --bg: #f6f4f1; --panel: #fff; --ink: #1c1a18; --muted: #6b635c;
+  --line: #ddd6ce; --accent: #9c2b1b; --ok: #1f6b3a; --bad: #9c2b1b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17151a; --panel: #201d24; --ink: #ece7e2; --muted: #a49a92;
+    --line: #342f39; --accent: #e06a52; --ok: #6fd08c; --bad: #ff8f77;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17151a; --panel: #201d24; --ink: #ece7e2; --muted: #a49a92;
+  --line: #342f39; --accent: #e06a52; --ok: #6fd08c; --bad: #ff8f77;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0 0 28px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 20px; margin: 0 0 20px;
+}
+#drop {
+  border: 2px dashed var(--line); border-radius: 12px; padding: 36px 20px;
+  text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+}
+#drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#drop strong { color: var(--accent); }
+input[type=file] { display: none; }
+.status { margin-top: 16px; font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
+.row .k { color: var(--muted); min-width: 92px; flex: none; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+.ok { color: var(--ok); } .bad { color: var(--bad); }
+.err { border-left: 3px solid var(--bad); padding-left: 14px; margin-top: 14px; }
+.err h4 { margin: 0 0 6px; color: var(--bad); font-size: 1rem; }
+a.dl {
+  display: inline-block; margin-top: 18px; background: var(--accent); color: #fff;
+  text-decoration: none; padding: 11px 20px; border-radius: 8px; font-weight: 600;
+}
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .93rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+h3 { font-size: 1.05rem; margin: 26px 0 6px; }
+p { margin: 8px 0; }
+p.bullet { padding-left: 16px; position: relative; }
+p.bullet::before { content: "—"; position: absolute; left: 0; color: var(--muted); }
+.foot { color: var(--muted); font-size: .88rem; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Demon's Crest practice ROM v@VERSION@</h1>
+<p class="sub">An Any% practice hack of the Japanese release, <em>Demon's Blazon:
+Makai-mura Monshou-hen</em>. Drop your ROM below — everything happens in this
+page, on your machine. Nothing is uploaded, and this file works offline.</p>
+
+<div class="card">
+  <div id="drop" tabindex="0" role="button">
+    <p style="margin:0"><strong>Choose your ROM</strong> or drag it here</p>
+    <p style="margin:6px 0 0; color:var(--muted); font-size:.9rem">
+      Unmodified Japanese ROM, 2,097,152 bytes. A 2,097,664-byte copier dump is fine too.</p>
+  </div>
+  <input type="file" id="file" accept=".sfc,.smc,.swc,.fig,.bin">
+  <div class="status" id="status"></div>
+</div>
+
+<div class="card">
+@BODY@
+</div>
+
+<p class="foot">You supply the game; this page supplies only the changes. It
+verifies your ROM before touching it and checks the result against the hash of
+the build it was made from, so a patched file that reports <span class="ok">verified</span>
+is byte-for-byte what was tested.</p>
+
+</div>
+<script>
+const IPS_B64 = "@IPS_B64@";
+const SOURCE_SHA1 = "@SOURCE_SHA1@";
+const RESULT_SHA1 = "@RESULT_SHA1@";
+const VERSION = "@VERSION@";
+
+/* SHA-1 in JS on purpose: a page opened from file:// is not a secure context in
+   Chrome, so crypto.subtle is undefined there, and working as a local file is
+   the whole point of this page. */
+function sha1(bytes) {
+  const ml = bytes.length * 8;
+  const withPad = new Uint8Array(((bytes.length + 9 + 63) >> 6) << 6);
+  withPad.set(bytes);
+  withPad[bytes.length] = 0x80;
+  const dv = new DataView(withPad.buffer);
+  dv.setUint32(withPad.length - 4, ml >>> 0, false);
+  dv.setUint32(withPad.length - 8, Math.floor(ml / 4294967296), false);
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  const w = new Int32Array(80);
+  const rol = (n, s) => (n << s) | (n >>> (32 - s));
+  for (let i = 0; i < withPad.length; i += 64) {
+    for (let j = 0; j < 16; j++) w[j] = dv.getInt32(i + j * 4, false);
+    for (let j = 16; j < 80; j++) w[j] = rol(w[j-3] ^ w[j-8] ^ w[j-14] ^ w[j-16], 1);
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let j = 0; j < 80; j++) {
+      let f, k;
+      if (j < 20)      { f = (b & c) | (~b & d);          k = 0x5A827999; }
+      else if (j < 40) { f = b ^ c ^ d;                    k = 0x6ED9EBA1; }
+      else if (j < 60) { f = (b & c) | (b & d) | (c & d);  k = 0x8F1BBCDC; }
+      else             { f = b ^ c ^ d;                    k = 0xCA62C1D6; }
+      const t = (rol(a, 5) + f + e + k + w[j]) | 0;
+      e = d; d = c; c = rol(b, 30); b = a; a = t;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+  }
+  return [h0, h1, h2, h3, h4]
+    .map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+function b64bytes(s) {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function applyIPS(rom, patch) {
+  if (String.fromCharCode(...patch.slice(0, 5)) !== "PATCH")
+    throw new Error("This patch file is damaged (missing its 'PATCH' marker).");
+  const out = new Uint8Array(rom);
+  let i = 5, records = 0;
+  for (;;) {
+    if (i + 3 > patch.length) throw new Error("The patch ended without an EOF marker.");
+    if (String.fromCharCode(patch[i], patch[i+1], patch[i+2]) === "EOF") break;
+    const off = (patch[i] << 16) | (patch[i+1] << 8) | patch[i+2]; i += 3;
+    const size = (patch[i] << 8) | patch[i+1]; i += 2;
+    if (size === 0) {
+      const run = (patch[i] << 8) | patch[i+1]; i += 2;
+      const val = patch[i]; i += 1;
+      out.fill(val, off, off + run);
+    } else {
+      out.set(patch.slice(i, i + size), off); i += size;
+    }
+    records++;
+  }
+  return { out, records };
+}
+
+const statusEl = document.getElementById("status");
+const dropEl = document.getElementById("drop");
+const fileEl = document.getElementById("file");
+
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const row = (k, v, cls) => `<div class=row><span class=k>${k}</span><span class="${cls || ""}">${v}</span></div>`;
+const fail = (title, ...lines) => {
+  statusEl.innerHTML += `<div class=err><h4>${esc(title)}</h4>${lines.map(l => `<p>${l}</p>`).join("")}</div>`;
+};
+
+function handle(file) {
+  statusEl.innerHTML = "";
+  const reader = new FileReader();
+  reader.onload = () => {
+    let rom = new Uint8Array(reader.result);
+    let hadHeader = false;
+    /* Copier dumps prepend 512 bytes; a real cart dump is a whole number of KB. */
+    if (rom.length % 1024 === 512) { rom = rom.slice(512); hadHeader = true; }
+
+    const inHash = sha1(rom);
+    statusEl.innerHTML =
+      row("file", esc(file.name)) +
+      row("size", rom.length.toLocaleString() + " bytes" +
+          (hadHeader ? " <span class=ok>(copier header removed)</span>" : "")) +
+      row("sha-1", `<code>${inHash}</code>`);
+
+    if (inHash !== SOURCE_SHA1) {
+      fail("This is not the ROM the patch was built for",
+        `Expected <code>${SOURCE_SHA1}</code>`,
+        "Most likely you have the USA release, <em>Demon's Crest</em>. That is a " +
+        "different build with a different code layout, so this patch would corrupt it. " +
+        "You need the Japanese release, <em>Demon's Blazon: Makai-mura Monshou-hen</em>.");
+      return;
+    }
+    statusEl.innerHTML += row("source ROM", "recognised", "ok");
+
+    let res;
+    try { res = applyIPS(rom, b64bytes(IPS_B64)); }
+    catch (e) { fail("Could not apply the patch", esc(e.message)); return; }
+
+    const outHash = sha1(res.out);
+    statusEl.innerHTML += row("patched", `${res.records} changes applied`) +
+                          row("sha-1", `<code>${outHash}</code>`);
+    if (outHash !== RESULT_SHA1) {
+      fail("The patched ROM does not match the expected hash",
+        `Expected <code>${RESULT_SHA1}</code>`,
+        "The patch applied but produced the wrong bytes, which should not happen. " +
+        "Please report this rather than using the file.");
+      return;
+    }
+    statusEl.innerHTML += row("result", "verified", "ok");
+
+    const base = file.name.replace(/\.(sfc|smc|swc|fig|bin)$/i, "");
+    const url = URL.createObjectURL(new Blob([res.out], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.className = "dl"; a.href = url;
+    a.download = `${base} (Practice v${VERSION}).sfc`;
+    a.textContent = "Download patched ROM";
+    statusEl.appendChild(a);
+  };
+  reader.onerror = () => fail("Could not read that file", "Try choosing it again.");
+  reader.readAsArrayBuffer(file);
+}
+
+dropEl.addEventListener("click", () => fileEl.click());
+dropEl.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileEl.click(); }
+});
+fileEl.addEventListener("change", e => { if (e.target.files[0]) handle(e.target.files[0]); });
+["dragenter", "dragover"].forEach(ev =>
+  dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  dropEl.addEventListener(ev, e => { e.preventDefault(); dropEl.classList.remove("over"); }));
+dropEl.addEventListener("drop", e => { if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); });
+</script>
+</body>
+</html>
