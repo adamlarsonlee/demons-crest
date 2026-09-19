@@ -5,7 +5,7 @@ CONFIG := $(BUILD)/rom_config.inc
 LOCK  := rom.lock
 ASM   := src/asm/patch.asm
 
-.PHONY: all verify rom patch dist clean distclean docker-image docker-rom docker-shell docker-shot docker-dist
+.PHONY: all verify rom patch dist test clean distclean docker-image docker-rom docker-shell docker-shot docker-dist docker-test
 
 all: rom
 
@@ -54,6 +54,12 @@ $(DIST): $(BUILD)/DemonsBlazon_Practice.ips tools/mkhtml.py tools/patcher.html.i
 		README.md VERSION
 	python3 tools/mkhtml.py --ips $(BUILD)/DemonsBlazon_Practice.ips --rom $(OUT) --out $@
 
+## Regression tests. Every check exists because something actually broke;
+## tools/regress.py names what. Static checks are instant, the five emulated
+## scenarios take a couple of minutes. Use `make docker-test` on the host.
+test: $(OUT)
+	python3 tools/regress.py $(OUT)
+
 clean:
 	rm -rf $(BUILD)
 
@@ -82,6 +88,9 @@ SHOT   ?= $(OUT)
 
 docker-dist:
 	$(DOCKER_RUN) make dist
+
+docker-test:
+	$(DOCKER_RUN) make test
 
 docker-shot:
 	$(DOCKER_RUN) python3 tools/headless.py $(SHOT) --frames $(FRAMES) --dump $(DUMP)

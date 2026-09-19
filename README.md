@@ -124,7 +124,23 @@ make verify   # identify the ROM, pin its hash, emit the asar mapping include
 make rom      # build build/DemonsBlazon_Practice.sfc
 make patch    # emit a distributable IPS patch
 make dist     # the single-file HTML patcher
+make test     # regression tests (use `make docker-test` on the host)
 ```
+
+### Regression tests
+
+`tools/regress.py` guards the faults that have actually happened here, so a
+future change fails with a name instead of a mystery. Seven static checks on
+the built ROM, then five scenarios driven through the headless core.
+
+It is validated against the broken builds rather than only the good one: v0.6
+fails the copier-flag checks, v0.7 fails the `$7F:FFFE` checks, and the current
+build passes all 21. A suite that only ever passes proves nothing.
+
+One gap is recorded in the code rather than papered over: `$0EEB`, the flag
+that gates the crest menu, is asserted but **not exercised** - measured against
+a re-armed build, nothing in these scenarios reaches the check at `$80:8746`.
+The exact static byte check is the real guard for that site.
 
 `make verify` pins the source ROM's SHA-1 to `rom.lock` so later builds fail
 loudly if the dump changes. Override the path with `make ROM=path/to/rom.sfc`.

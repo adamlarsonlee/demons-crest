@@ -132,8 +132,18 @@ end to end with `exit_probe.asm`.
 make verify      # identify the ROM, pin its SHA-1, emit the asar mapping
 make rom         # build build/DemonsBlazon_Practice.sfc
 make docker-rom  # same, in the container (byte-identical output)
+make docker-test # regression tests - run these before and after any hook change
 make docker-shot # capture frames to build/frames as PNG
 ```
+
+**`make docker-test` is the guard rail.** `tools/regress.py` encodes every fault
+that has actually happened: the copier detection the SRAM header trips, the
+game's own stack pointer at `$7F:FFFE` that a save state must not restore, the
+exit and menu paths. Each check names the bug it exists for. It is validated
+against the broken builds, not just the good one - v0.6 fails the copier checks
+and v0.7 fails the `$7F:FFFE` checks. Add a scenario whenever a new fault is
+found, and verify the new check actually fails on the broken build before
+trusting it.
 
 Supply your own ROM at `rom/DemonsBlazon.sfc`; ROMs and save states are
 gitignored and never distributed.
